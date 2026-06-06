@@ -28,6 +28,7 @@ class TempoMarker:
     note_id: int
     name: str
     start_ms: int
+    end_ms: int
     bpm: int
     beats_per_bar: int
     accent_first_beat: bool

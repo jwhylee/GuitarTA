@@ -16,6 +16,10 @@ from guitarta.services.repository import Repository
 BG = "#0F0E0C"
 PANEL = "#191714"
 PANEL_2 = "#242019"
+SIDEBAR_BG = "#F4E3C4"
+SIDEBAR_PANEL = "#E8D0A5"
+SIDEBAR_TEXT = "#201A12"
+SIDEBAR_MUTED = "#6F604A"
 BEIGE = "#F4E3C4"
 BEIGE_2 = "#E8D0A5"
 TEXT = "#FFF7EA"
@@ -36,6 +40,7 @@ class GuitarTAApp:
         self.current_position_ms = 0
         self.is_downloading = False
         self.sidebar_open = True
+        self.metronome_stop_timer: Optional[threading.Timer] = None
 
         normal_click = ensure_click_wav(audio_dir() / "click.wav", 1250)
         accent_click = ensure_click_wav(audio_dir() / "accent.wav", 1800)
@@ -61,7 +66,16 @@ class GuitarTAApp:
         self.category_input = self._text_field("카테고리", width=150, value="미분류")
         self.download_status = ft.Text("", color=MUTED, size=12)
         self.video_status = ft.Text("", color=MUTED, size=12)
-        self.category_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
+        self.category_dropdown = ft.Dropdown(
+            label="카테고리",
+            dense=True,
+            border_color="#BCA77C",
+            focused_border_color=SIDEBAR_TEXT,
+            bgcolor="#FFF2D7",
+            color=SIDEBAR_TEXT,
+            label_style=ft.TextStyle(color=SIDEBAR_MUTED),
+            on_change=self._select_category_from_dropdown,
+        )
         self.note_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
 
         self.title_input = self._text_field("노트 제목", expand=True)
@@ -97,6 +111,7 @@ class GuitarTAApp:
 
         self.marker_name_input = self._text_field("구간 이름", expand=True, value="새 구간")
         self.marker_start_input = self._text_field("시작 ms", width=110, value="0")
+        self.marker_end_input = self._text_field("종료 ms", width=110, value="0")
         self.bpm_input = self._text_field("BPM", width=90, value="120")
         self.beats_input = self._text_field("박자", width=80, value="4")
         self.accent_checkbox = ft.Checkbox(
@@ -128,47 +143,51 @@ class GuitarTAApp:
 
     def _sidebar(self) -> ft.Container:
         return ft.Container(
-            bgcolor=PANEL,
-            padding=ft.padding.all(18),
+            bgcolor=SIDEBAR_BG,
+            padding=ft.padding.symmetric(horizontal=14, vertical=16),
             content=ft.Column(
                 [
                     ft.Row(
                         [
-                            ft.Text("GuitarTA", size=28, color=BEIGE, weight=ft.FontWeight.BOLD, expand=True),
+                            ft.Text("GuitarTA", size=28, color=SIDEBAR_TEXT, weight=ft.FontWeight.BOLD, expand=True),
                             ft.IconButton(
                                 icon=ft.Icons.CHEVRON_LEFT_ROUNDED,
-                                icon_color=BEIGE,
+                                icon_color=SIDEBAR_TEXT,
                                 tooltip="사이드바 닫기",
                                 on_click=self._toggle_sidebar,
                             ),
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    ft.Text("기타와 베이스 연습 노트", size=13, color=MUTED),
-                    ft.Divider(color=LINE),
-                    ft.Text("카테고리", color=BEIGE_2, weight=ft.FontWeight.BOLD),
-                    ft.Container(self.category_list, height=180),
-                    ft.Text("노트", color=BEIGE_2, weight=ft.FontWeight.BOLD),
+                    ft.Text("연습 노트", size=13, color=SIDEBAR_MUTED),
+                    ft.Divider(color="#BCA77C"),
+                    self.category_dropdown,
+                    ft.Row(
+                        [
+                            ft.Text("노트", color=SIDEBAR_TEXT, weight=ft.FontWeight.BOLD, expand=True),
+                            ft.Text("한 줄 보기", color=SIDEBAR_MUTED, size=12),
+                        ],
+                    ),
                     self.note_list,
                 ],
                 expand=True,
-                spacing=12,
+                spacing=10,
             ),
         )
 
     def _sidebar_rail(self) -> ft.Container:
         return ft.Container(
-            bgcolor=PANEL,
+            bgcolor=SIDEBAR_BG,
             padding=ft.padding.symmetric(horizontal=6, vertical=14),
             content=ft.Column(
                 [
                     ft.IconButton(
                         icon=ft.Icons.CHEVRON_RIGHT_ROUNDED,
-                        icon_color=BEIGE,
+                        icon_color=SIDEBAR_TEXT,
                         tooltip="사이드바 열기",
                         on_click=self._toggle_sidebar,
                     ),
-                    ft.Text("노트", color=BEIGE, size=12, rotate=ft.Rotate(1.5708)),
+                    ft.Text("노트", color=SIDEBAR_TEXT, size=12, rotate=ft.Rotate(1.5708)),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=22,
@@ -180,7 +199,7 @@ class GuitarTAApp:
             content=ft.Column(
                 [
                     ft.Icon(ft.Icons.MUSIC_VIDEO_ROUNDED, color=LINE, size=58),
-                    ft.Text("노트를 선택하거나 위 입력창에 유튜브 링크를 추가하세요.", color=MUTED, size=16),
+                    ft.Text("왼쪽에서 노트를 선택하세요.", color=MUTED, size=16),
                 ],
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 alignment=ft.MainAxisAlignment.CENTER,
@@ -197,7 +216,6 @@ class GuitarTAApp:
             content=ft.Column(
                 [
                     self._top_bar(),
-                    self._download_panel(),
                     self.detail_area,
                 ],
                 expand=True,
@@ -211,11 +229,12 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.4  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.5  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
                 ),
+                ft.Container(self._download_panel(), width=430),
             ],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
@@ -250,7 +269,7 @@ class GuitarTAApp:
                     border=ft.border.all(1, LINE),
                     border_radius=8,
                     padding=ft.padding.all(8),
-                    height=360,
+                    height=340,
                 ),
                 self.video_status,
                 ft.Row(
@@ -267,23 +286,19 @@ class GuitarTAApp:
                     spacing=8,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
+                ft.Divider(color=LINE),
                 ft.Row(
                     [
-                        ft.Container(
-                            bgcolor=PANEL,
-                            border=ft.border.all(1, LINE),
-                            border_radius=8,
-                            padding=ft.padding.all(14),
-                            content=ft.Column(
-                                [
-                                    ft.Text("노트 메모", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
-                                    self.memo_input,
-                                ],
-                                spacing=10,
-                            ),
+                        ft.Column(
+                            [
+                                ft.Text("노트 메모", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
+                                self.memo_input,
+                            ],
+                            spacing=10,
                             expand=1,
                         ),
-                        ft.Container(self._metronome_panel(), width=410),
+                        ft.VerticalDivider(width=1, color=LINE),
+                        ft.Container(self._metronome_panel(), width=430),
                     ],
                     spacing=16,
                 ),
@@ -298,10 +313,10 @@ class GuitarTAApp:
             bgcolor=PANEL,
             border=ft.border.all(1, LINE),
             border_radius=8,
-            padding=ft.padding.all(14),
+            padding=ft.padding.all(12),
             content=ft.Column(
                 [
-                    ft.Text("새 연습 영상", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
+                    ft.Text("새 노트", color=BEIGE, size=16, weight=ft.FontWeight.BOLD),
                     ft.Row([self.new_title_input, self.category_input], spacing=10),
                     ft.Row(
                         [
@@ -312,49 +327,43 @@ class GuitarTAApp:
                     ),
                     self.download_status,
                 ],
-                spacing=10,
+                spacing=8,
             ),
         )
 
     def _metronome_panel(self) -> ft.Control:
-        return ft.Container(
-            bgcolor=PANEL,
-            border=ft.border.all(1, LINE),
-            border_radius=8,
-            height=320,
-            padding=ft.padding.all(14),
-            content=ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ft.Text("메트로놈 구간", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
-                            self.metronome_status,
-                        ],
-                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    ),
-                    ft.Row([self.marker_name_input], spacing=8),
-                    ft.Row(
-                        [
-                            self.marker_start_input,
-                            self._button("현재 위치", ft.Icons.MY_LOCATION_ROUNDED, self._capture_position),
-                        ],
-                        spacing=8,
-                    ),
-                    ft.Row([self.bpm_input, self.beats_input, self.accent_checkbox], spacing=8),
-                    ft.Row(
-                        [
-                            self._button("구간 추가", ft.Icons.ADD_ROUNDED, self._add_marker),
-                            self._button("시작", ft.Icons.GRAPHIC_EQ_ROUNDED, self._start_metronome),
-                            self._button("정지", ft.Icons.STOP_ROUNDED, self._stop_metronome),
-                        ],
-                        spacing=8,
-                    ),
-                    ft.Divider(color=LINE),
-                    self.marker_list,
-                ],
-                expand=True,
-                spacing=10,
-            ),
+        return ft.Column(
+            [
+                ft.Row(
+                    [
+                        ft.Text("메트로놈 구간", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
+                        self.metronome_status,
+                    ],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                ),
+                self.marker_name_input,
+                ft.Row(
+                    [
+                        self.marker_start_input,
+                        self._button("시작 위치", ft.Icons.MY_LOCATION_ROUNDED, self._capture_position),
+                        self.marker_end_input,
+                        self._button("종료 위치", ft.Icons.FLAG_ROUNDED, self._capture_end_position),
+                    ],
+                    spacing=8,
+                ),
+                ft.Row([self.bpm_input, self.beats_input, self.accent_checkbox], spacing=8),
+                ft.Row(
+                    [
+                        self._button("구간 추가", ft.Icons.ADD_ROUNDED, self._add_marker),
+                        self._button("시작", ft.Icons.GRAPHIC_EQ_ROUNDED, self._start_metronome),
+                        self._button("정지", ft.Icons.STOP_ROUNDED, self._stop_metronome),
+                    ],
+                    spacing=8,
+                ),
+                ft.Divider(color=LINE),
+                ft.Container(self.marker_list, height=130),
+            ],
+            spacing=10,
         )
 
     def _refresh_all(self) -> None:
@@ -369,12 +378,15 @@ class GuitarTAApp:
         self.page.update()
 
     def _render_sidebar(self) -> None:
-        self.category_list.controls = [
-            self._category_tile(None, "전체", self.selected_category_id is None)
+        self.category_dropdown.options = [
+            ft.dropdown.Option(key="all", text="전체")
         ] + [
-            self._category_tile(category.id, category.name, category.id == self.selected_category_id)
+            ft.dropdown.Option(key=str(category.id), text=category.name)
             for category in self.categories
         ]
+        self.category_dropdown.value = (
+            str(self.selected_category_id) if self.selected_category_id is not None else "all"
+        )
         self.note_list.controls = [
             self._note_tile(note, self.selected_note is not None and note.id == self.selected_note.id)
             for note in self.notes
@@ -390,7 +402,8 @@ class GuitarTAApp:
         self.marker_list.controls = []
         for marker in self.markers:
             selected = self.selected_marker is not None and marker.id == self.selected_marker.id
-            label = f"{marker.name}  {self._format_ms(marker.start_ms)}  {marker.bpm} BPM"
+            end_label = "끝까지" if marker.end_ms <= 0 else self._format_ms(marker.end_ms)
+            label = f"{marker.name}  {self._format_ms(marker.start_ms)}-{end_label}  {marker.bpm} BPM"
             self.marker_list.controls.append(
                 ft.Container(
                     bgcolor=PANEL_2 if selected else BG,
@@ -418,30 +431,33 @@ class GuitarTAApp:
                 )
             )
 
-    def _category_tile(self, category_id: Optional[int], label: str, selected: bool) -> ft.Control:
-        return ft.Container(
-            bgcolor=PANEL_2 if selected else None,
-            border_radius=6,
-            padding=ft.padding.symmetric(horizontal=10, vertical=8),
-            on_click=lambda e: self._select_category(category_id),
-            content=ft.Text(label, color=BEIGE if selected else TEXT, size=14),
-        )
-
     def _note_tile(self, note: Note, selected: bool) -> ft.Control:
         return ft.Container(
-            bgcolor=PANEL_2 if selected else None,
-            border=ft.border.all(1, ACCENT if selected else LINE),
-            border_radius=6,
-            padding=ft.padding.all(10),
+            bgcolor="#FFF2D7" if selected else SIDEBAR_BG,
+            border=ft.border.only(bottom=ft.BorderSide(1, "#D0B98A")),
+            padding=ft.padding.symmetric(horizontal=8, vertical=9),
             on_click=lambda e, n=note: self._select_note(n),
-            content=ft.Column(
+            content=ft.Row(
                 [
-                    ft.Text(note.title, color=BEIGE if selected else TEXT, size=14, weight=ft.FontWeight.BOLD),
-                    ft.Text(self._category_name(note.category_id), color=MUTED, size=12),
+                    ft.Text(
+                        note.title,
+                        color=SIDEBAR_TEXT,
+                        size=13,
+                        weight=ft.FontWeight.BOLD if selected else ft.FontWeight.NORMAL,
+                        expand=True,
+                        max_lines=1,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                    ),
+                    ft.Text(self._category_name(note.category_id), color=SIDEBAR_MUTED, size=11),
                 ],
-                spacing=3,
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
         )
+
+    def _select_category_from_dropdown(self, event: ft.ControlEvent) -> None:
+        value = self.category_dropdown.value
+        self._select_category(None if value in (None, "all") else int(value))
 
     def _select_category(self, category_id: Optional[int]) -> None:
         self.selected_category_id = category_id
@@ -599,6 +615,12 @@ class GuitarTAApp:
         self.marker_start_input.value = str(value)
         self.page.update()
 
+    def _capture_end_position(self, event: ft.ControlEvent) -> None:
+        value = self._video_position_ms()
+        self.current_position_ms = value
+        self.marker_end_input.value = str(value)
+        self.page.update()
+
     def _add_marker(self, event: ft.ControlEvent) -> None:
         if not self.selected_note:
             return
@@ -606,6 +628,7 @@ class GuitarTAApp:
             note_id=self.selected_note.id,
             name=self.marker_name_input.value or "새 구간",
             start_ms=self._int_value(self.marker_start_input.value, 0),
+            end_ms=self._int_value(self.marker_end_input.value, 0),
             bpm=self._int_value(self.bpm_input.value, 120),
             beats_per_bar=self._int_value(self.beats_input.value, 4),
             accent_first_beat=bool(self.accent_checkbox.value),
@@ -619,6 +642,7 @@ class GuitarTAApp:
         self.selected_marker = marker
         self.marker_name_input.value = marker.name
         self.marker_start_input.value = str(marker.start_ms)
+        self.marker_end_input.value = str(marker.end_ms)
         self.bpm_input.value = str(marker.bpm)
         self.beats_input.value = str(marker.beats_per_bar)
         self.accent_checkbox.value = marker.accent_first_beat
@@ -642,13 +666,35 @@ class GuitarTAApp:
         accent = marker.accent_first_beat if marker else bool(self.accent_checkbox.value)
         if marker:
             self._seek_ms(marker.start_ms)
+            self._call_video("play")
         self.metronome.start(bpm, beats, accent)
+        self._schedule_metronome_stop(marker)
         self.metronome_status.value = f"{bpm} BPM 재생 중"
         self.page.update()
 
     def _stop_metronome(self, event: ft.ControlEvent) -> None:
+        self._cancel_metronome_stop_timer()
         self.metronome.stop()
         self.metronome_status.value = "정지"
+        self.page.update()
+
+    def _schedule_metronome_stop(self, marker: Optional[TempoMarker]) -> None:
+        self._cancel_metronome_stop_timer()
+        if not marker or marker.end_ms <= marker.start_ms:
+            return
+        seconds = (marker.end_ms - marker.start_ms) / 1000
+        self.metronome_stop_timer = threading.Timer(seconds, self._stop_metronome_from_timer)
+        self.metronome_stop_timer.daemon = True
+        self.metronome_stop_timer.start()
+
+    def _cancel_metronome_stop_timer(self) -> None:
+        if self.metronome_stop_timer:
+            self.metronome_stop_timer.cancel()
+            self.metronome_stop_timer = None
+
+    def _stop_metronome_from_timer(self) -> None:
+        self.metronome.stop()
+        self.metronome_status.value = "구간 종료"
         self.page.update()
 
     def _play_tick(self, accent: bool) -> None:

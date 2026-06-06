@@ -44,6 +44,7 @@ class Repository:
                     note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
                     name TEXT NOT NULL,
                     start_ms INTEGER NOT NULL DEFAULT 0,
+                    end_ms INTEGER NOT NULL DEFAULT 0,
                     bpm INTEGER NOT NULL DEFAULT 120,
                     beats_per_bar INTEGER NOT NULL DEFAULT 4,
                     accent_first_beat INTEGER NOT NULL DEFAULT 1,
@@ -51,6 +52,14 @@ class Repository:
                 );
                 """
             )
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(tempo_markers)").fetchall()
+            }
+            if "end_ms" not in columns:
+                conn.execute(
+                    "ALTER TABLE tempo_markers ADD COLUMN end_ms INTEGER NOT NULL DEFAULT 0"
+                )
             conn.execute(
                 "INSERT OR IGNORE INTO categories(name) VALUES (?)",
                 ("미분류",),
@@ -145,19 +154,21 @@ class Repository:
         bpm: int,
         beats_per_bar: int,
         accent_first_beat: bool,
+        end_ms: int = 0,
     ) -> TempoMarker:
         with self._connect() as conn:
             cur = conn.execute(
                 """
                 INSERT INTO tempo_markers(
-                    note_id, name, start_ms, bpm, beats_per_bar, accent_first_beat
+                    note_id, name, start_ms, end_ms, bpm, beats_per_bar, accent_first_beat
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     note_id,
                     name.strip() or "새 구간",
                     max(0, start_ms),
+                    max(0, end_ms),
                     max(20, min(300, bpm)),
                     max(1, min(16, beats_per_bar)),
                     1 if accent_first_beat else 0,
@@ -196,6 +207,7 @@ class Repository:
             note_id=row["note_id"],
             name=row["name"],
             start_ms=row["start_ms"],
+            end_ms=row["end_ms"],
             bpm=row["bpm"],
             beats_per_bar=row["beats_per_bar"],
             accent_first_beat=bool(row["accent_first_beat"]),
