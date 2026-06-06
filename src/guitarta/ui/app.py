@@ -211,7 +211,7 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.3  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.4  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
@@ -250,7 +250,7 @@ class GuitarTAApp:
                     border=ft.border.all(1, LINE),
                     border_radius=8,
                     padding=ft.padding.all(8),
-                    height=430,
+                    height=360,
                 ),
                 self.video_status,
                 ft.Row(
@@ -285,11 +285,11 @@ class GuitarTAApp:
                         ),
                         ft.Container(self._metronome_panel(), width=410),
                     ],
-                    expand=True,
                     spacing=16,
                 ),
             ],
             expand=True,
+            scroll=ft.ScrollMode.AUTO,
             spacing=14,
         )
 
@@ -321,6 +321,7 @@ class GuitarTAApp:
             bgcolor=PANEL,
             border=ft.border.all(1, LINE),
             border_radius=8,
+            height=320,
             padding=ft.padding.all(14),
             content=ft.Column(
                 [
