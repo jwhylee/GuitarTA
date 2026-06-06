@@ -40,6 +40,7 @@ class GuitarTAApp:
         self.sidebar_open = True
         self.loop_timer: Optional[threading.Timer] = None
         self.loop_active = False
+        self.restore_app_fullscreen = False
 
         self.categories: List[Category] = []
         self.notes: List[Note] = []
@@ -53,8 +54,8 @@ class GuitarTAApp:
         self.page.bgcolor = BG
         self.page.padding = 0
 
-        self.new_title_input = self._text_field("새 노트 제목", expand=True)
-        self.url_input = self._text_field("유튜브 링크", expand=True)
+        self.new_title_input = self._text_field("새 노트 제목", width=250)
+        self.url_input = self._text_field("유튜브 링크", width=430)
         self.category_input = self._text_field("카테고리", width=220, value="미분류")
         self.download_status = ft.Text("", color=MUTED, size=12)
         self.note_dialog_mode = "create"
@@ -64,11 +65,17 @@ class GuitarTAApp:
             label="카테고리",
             width=320,
             dense=True,
+            menu_width=320,
+            max_menu_height=260,
             border_color="#BCA77C",
             focused_border_color=SIDEBAR_TEXT,
             bgcolor="#FFF2D7",
             color=SIDEBAR_TEXT,
+            focused_color=SIDEBAR_TEXT,
+            text_style=ft.TextStyle(color=SIDEBAR_TEXT),
             label_style=ft.TextStyle(color=SIDEBAR_MUTED),
+            select_icon_enabled_color=SIDEBAR_TEXT,
+            icon_enabled_color=SIDEBAR_TEXT,
             on_change=self._select_category_from_dropdown,
         )
         self.note_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
@@ -91,9 +98,9 @@ class GuitarTAApp:
         self.video = self._make_video()
         self.rate_text = ft.Text("1.00x", color=BEIGE, size=16, weight=ft.FontWeight.BOLD)
         self.rate_slider = ft.Slider(
-            min=0.5,
+            min=0.1,
             max=2.0,
-            divisions=30,
+            divisions=38,
             value=1.0,
             active_color=ACCENT,
             inactive_color=LINE,
@@ -221,7 +228,7 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.8  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.9  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
@@ -331,9 +338,10 @@ class GuitarTAApp:
         return ft.AlertDialog(
             modal=True,
             bgcolor=PANEL,
-            title=ft.Text("노트 설정", color=BEIGE, weight=ft.FontWeight.BOLD),
+            title=ft.Text("노트 설정", color=BEIGE, size=22, weight=ft.FontWeight.BOLD),
             content=ft.Container(
-                width=480,
+                width=500,
+                height=138,
                 content=ft.Column(
                     [
                         ft.Row([self.new_title_input, self.category_input], spacing=10),
@@ -341,12 +349,13 @@ class GuitarTAApp:
                         self.download_status,
                     ],
                     tight=True,
-                    spacing=8,
+                    spacing=6,
                 ),
             ),
             inset_padding=ft.padding.symmetric(horizontal=32, vertical=24),
-            content_padding=ft.padding.only(left=24, right=24, top=8, bottom=8),
-            actions_padding=ft.padding.only(left=16, right=16, bottom=14),
+            title_padding=ft.padding.only(left=20, right=20, top=18, bottom=6),
+            content_padding=ft.padding.only(left=20, right=20, top=4, bottom=0),
+            actions_padding=ft.padding.only(left=16, right=16, bottom=12, top=0),
             actions=[
                 ft.TextButton("취소", on_click=self._close_note_settings),
                 ft.ElevatedButton(
@@ -431,6 +440,8 @@ class GuitarTAApp:
                         spacing=8,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
+                    ft.Divider(color=LINE),
+                    ft.Text("반복구간 조작", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
                     ft.Row(
                         [
                             self._compact_button("추가", ft.Icons.ADD_ROUNDED, self._add_marker),
@@ -459,9 +470,17 @@ class GuitarTAApp:
 
     def _render_sidebar(self) -> None:
         self.category_dropdown.options = [
-            ft.dropdown.Option(key="all", text="전체")
+            ft.dropdown.Option(
+                key="all",
+                text="전체",
+                text_style=ft.TextStyle(color=SIDEBAR_TEXT, size=14, weight=ft.FontWeight.BOLD),
+            )
         ] + [
-            ft.dropdown.Option(key=str(category.id), text=category.name)
+            ft.dropdown.Option(
+                key=str(category.id),
+                text=category.name,
+                text_style=ft.TextStyle(color=SIDEBAR_TEXT, size=14),
+            )
             for category in self.categories
         ]
         self.category_dropdown.value = (
@@ -667,6 +686,8 @@ class GuitarTAApp:
             fill_color=BG,
             volume=100,
             on_loaded=self._on_video_loaded,
+            on_enter_fullscreen=self._on_video_enter_fullscreen,
+            on_exit_fullscreen=self._on_video_exit_fullscreen,
             on_error=self._on_video_error,
         )
 
@@ -678,6 +699,21 @@ class GuitarTAApp:
         detail = getattr(event, "data", "") or "알 수 없는 오류"
         self.video_status.value = f"영상 로드 오류: {detail}"
         self.page.update()
+
+    def _on_video_enter_fullscreen(self, event: ft.ControlEvent) -> None:
+        self.restore_app_fullscreen = bool(getattr(self.page.window, "full_screen", False))
+
+    def _on_video_exit_fullscreen(self, event: ft.ControlEvent) -> None:
+        if not self.restore_app_fullscreen:
+            return
+
+        def restore() -> None:
+            self.page.window.full_screen = True
+            self.page.update()
+
+        timer = threading.Timer(0.2, restore)
+        timer.daemon = True
+        timer.start()
 
     def _play_video(self, event: ft.ControlEvent) -> None:
         self._call_video("play")
@@ -697,7 +733,7 @@ class GuitarTAApp:
 
     def _change_rate(self, event: ft.ControlEvent) -> None:
         value = round(float(self.rate_slider.value or 1.0) / 0.05) * 0.05
-        value = max(0.5, min(2.0, value))
+        value = max(0.1, min(2.0, value))
         self.rate_slider.value = value
         self.rate_text.value = f"{value:.2f}x"
         self.video.playback_rate = value
