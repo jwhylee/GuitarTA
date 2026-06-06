@@ -1,0 +1,21 @@
+[project]
+name = "guitarta"
+version = "0.1.2"
+description = "macOS guitar and bass practice app built with Python and Flet."
+requires-python = ">=3.9"
+dependencies = [
+    "flet[all]>=0.27.0",
+    "flet-video>=0.1.0",
+    "flet-audio>=0.1.0",
+    "yt-dlp>=2025.10.14",
+]
+
+[project.scripts]
+guitarta = "guitarta.main:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
