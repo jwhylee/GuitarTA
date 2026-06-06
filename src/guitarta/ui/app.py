@@ -163,7 +163,7 @@ class GuitarTAApp:
                     ft.Text("연습 노트", size=13, color=SIDEBAR_MUTED),
                     ft.Divider(color="#BCA77C"),
                     ft.ElevatedButton(
-                        text="새 노트 생성",
+                        text="새로운 노트 생성",
                         icon=ft.Icons.ADD_ROUNDED,
                         on_click=self._open_note_settings,
                         style=ft.ButtonStyle(
