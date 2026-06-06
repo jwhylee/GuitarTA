@@ -65,6 +65,7 @@ class GuitarTAApp:
         self.url_input = self._text_field("유튜브 링크", expand=True)
         self.category_input = self._text_field("카테고리", width=150, value="미분류")
         self.download_status = ft.Text("", color=MUTED, size=12)
+        self.note_dialog = self._note_settings_dialog()
         self.video_status = ft.Text("", color=MUTED, size=12)
         self.category_dropdown = ft.Dropdown(
             label="카테고리",
@@ -161,6 +162,17 @@ class GuitarTAApp:
                     ),
                     ft.Text("연습 노트", size=13, color=SIDEBAR_MUTED),
                     ft.Divider(color="#BCA77C"),
+                    ft.ElevatedButton(
+                        text="새 노트 생성",
+                        icon=ft.Icons.ADD_ROUNDED,
+                        on_click=self._open_note_settings,
+                        style=ft.ButtonStyle(
+                            bgcolor=SIDEBAR_TEXT,
+                            color=SIDEBAR_BG,
+                            shape=ft.RoundedRectangleBorder(radius=6),
+                            padding=ft.padding.symmetric(horizontal=12, vertical=12),
+                        ),
+                    ),
                     self.category_dropdown,
                     ft.Row(
                         [
@@ -229,12 +241,12 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.5  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.6  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
                 ),
-                ft.Container(self._download_panel(), width=430),
+                self._button("노트 설정", ft.Icons.TUNE_ROUNDED, self._open_note_settings),
             ],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
@@ -289,6 +301,8 @@ class GuitarTAApp:
                 ft.Divider(color=LINE),
                 ft.Row(
                     [
+                        ft.Container(self._metronome_panel(), width=560),
+                        ft.VerticalDivider(width=1, color=LINE),
                         ft.Column(
                             [
                                 ft.Text("노트 메모", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
@@ -297,10 +311,9 @@ class GuitarTAApp:
                             spacing=10,
                             expand=1,
                         ),
-                        ft.VerticalDivider(width=1, color=LINE),
-                        ft.Container(self._metronome_panel(), width=430),
                     ],
                     spacing=16,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
                 ),
             ],
             expand=True,
@@ -331,6 +344,49 @@ class GuitarTAApp:
             ),
         )
 
+    def _note_settings_dialog(self) -> ft.AlertDialog:
+        return ft.AlertDialog(
+            modal=True,
+            bgcolor=PANEL,
+            title=ft.Text("노트 설정", color=BEIGE, weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                width=560,
+                content=ft.Column(
+                    [
+                        self.new_title_input,
+                        ft.Row([self.category_input], spacing=10),
+                        self.url_input,
+                        self.download_status,
+                    ],
+                    tight=True,
+                    spacing=10,
+                ),
+            ),
+            actions=[
+                ft.TextButton("취소", on_click=self._close_note_settings),
+                ft.ElevatedButton(
+                    text="다운로드",
+                    icon=ft.Icons.DOWNLOAD_ROUNDED,
+                    on_click=self._download_note,
+                    style=ft.ButtonStyle(
+                        bgcolor=ACCENT,
+                        color=BG,
+                        shape=ft.RoundedRectangleBorder(radius=6),
+                    ),
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+    def _open_note_settings(self, event: ft.ControlEvent) -> None:
+        self.note_dialog.open = True
+        self.page.dialog = self.note_dialog
+        self.page.update()
+
+    def _close_note_settings(self, event: ft.ControlEvent) -> None:
+        self.note_dialog.open = False
+        self.page.update()
+
     def _metronome_panel(self) -> ft.Control:
         return ft.Column(
             [
@@ -350,6 +406,7 @@ class GuitarTAApp:
                         self._button("종료 위치", ft.Icons.FLAG_ROUNDED, self._capture_end_position),
                     ],
                     spacing=8,
+                    wrap=True,
                 ),
                 ft.Row([self.bpm_input, self.beats_input, self.accent_checkbox], spacing=8),
                 ft.Row(
@@ -359,6 +416,7 @@ class GuitarTAApp:
                         self._button("정지", ft.Icons.STOP_ROUNDED, self._stop_metronome),
                     ],
                     spacing=8,
+                    wrap=True,
                 ),
                 ft.Divider(color=LINE),
                 ft.Container(self.marker_list, height=130),
@@ -416,8 +474,8 @@ class GuitarTAApp:
                             ft.IconButton(
                                 icon=ft.Icons.PLAY_ARROW_ROUNDED,
                                 icon_color=BEIGE,
-                                tooltip="이 구간 선택",
-                                on_click=lambda e, m=marker: self._select_marker(m),
+                                tooltip="이 구간 재생",
+                                on_click=lambda e, m=marker: self._play_marker(m),
                             ),
                             ft.IconButton(
                                 icon=ft.Icons.DELETE_OUTLINE_ROUNDED,
@@ -505,6 +563,7 @@ class GuitarTAApp:
                 self.selected_marker = None
                 self.url_input.value = ""
                 self.new_title_input.value = ""
+                self.note_dialog.open = False
                 self.download_status.value = "노트가 추가되었습니다."
             except DownloadError as exc:
                 self.download_status.value = str(exc)
@@ -556,6 +615,7 @@ class GuitarTAApp:
             playlist=playlist or [],
             aspect_ratio=16 / 9,
             autoplay=False,
+            show_controls=False,
             fill_color=BG,
             volume=100,
             on_loaded=self._on_video_loaded,
@@ -572,9 +632,10 @@ class GuitarTAApp:
         self.page.update()
 
     def _play_video(self, event: ft.ControlEvent) -> None:
-        self._call_video("play")
-        if self.selected_marker:
+        if self.selected_marker or self.markers:
             self._start_metronome(event)
+            return
+        self._call_video("play")
 
     def _pause_video(self, event: ft.ControlEvent) -> None:
         self._call_video("pause")
@@ -650,6 +711,10 @@ class GuitarTAApp:
         self._render_markers()
         self.page.update()
 
+    def _play_marker(self, marker: TempoMarker) -> None:
+        self._select_marker(marker)
+        self._start_metronome_for_marker(marker)
+
     def _delete_marker(self, marker: TempoMarker) -> None:
         self.repo.delete_tempo_marker(marker.id)
         if self.selected_marker and self.selected_marker.id == marker.id:
@@ -660,13 +725,25 @@ class GuitarTAApp:
         self.page.update()
 
     def _start_metronome(self, event: ft.ControlEvent) -> None:
-        marker = self.selected_marker
+        marker = self.selected_marker or (self.markers[0] if self.markers else None)
+        if marker:
+            self.selected_marker = marker
+            self._start_metronome_for_marker(marker)
+            return
+        self._call_video("play")
+        bpm = self._int_value(self.bpm_input.value, 120)
+        beats = self._int_value(self.beats_input.value, 4)
+        accent = bool(self.accent_checkbox.value)
+        self.metronome.start(bpm, beats, accent)
+        self.metronome_status.value = f"{bpm} BPM 재생 중"
+        self.page.update()
+
+    def _start_metronome_for_marker(self, marker: TempoMarker) -> None:
         bpm = marker.bpm if marker else self._int_value(self.bpm_input.value, 120)
         beats = marker.beats_per_bar if marker else self._int_value(self.beats_input.value, 4)
         accent = marker.accent_first_beat if marker else bool(self.accent_checkbox.value)
-        if marker:
-            self._seek_ms(marker.start_ms)
-            self._call_video("play")
+        self._seek_ms(marker.start_ms)
+        self._call_video("play")
         self.metronome.start(bpm, beats, accent)
         self._schedule_metronome_stop(marker)
         self.metronome_status.value = f"{bpm} BPM 재생 중"
