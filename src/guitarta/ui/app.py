@@ -1,4 +1,5 @@
 import threading
+from pathlib import Path
 from typing import List, Optional
 
 import flet as ft
@@ -59,6 +60,7 @@ class GuitarTAApp:
         self.url_input = self._text_field("유튜브 링크", expand=True)
         self.category_input = self._text_field("카테고리", width=150, value="미분류")
         self.download_status = ft.Text("", color=MUTED, size=12)
+        self.video_status = ft.Text("", color=MUTED, size=12)
         self.category_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
         self.note_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
 
@@ -77,14 +79,7 @@ class GuitarTAApp:
         self.note_category_input = self._text_field("카테고리", width=160)
         self.save_note_button = self._button("저장", ft.Icons.SAVE_OUTLINED, self._save_note)
 
-        self.video = fvideo.Video(
-            expand=True,
-            playlist=[],
-            aspect_ratio=16 / 9,
-            autoplay=False,
-            fill_color=BG,
-            volume=100,
-        )
+        self.video = self._make_video()
         self.play_button = self._button("재생", ft.Icons.PLAY_ARROW_ROUNDED, self._play_video)
         self.pause_button = self._button("일시정지", ft.Icons.PAUSE_ROUNDED, self._pause_video)
         self.position_input = self._text_field("이동 초", width=90, value="0")
@@ -216,7 +211,7 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.2  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.3  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
@@ -257,6 +252,7 @@ class GuitarTAApp:
                     padding=ft.padding.all(8),
                     height=430,
                 ),
+                self.video_status,
                 ft.Row(
                     [
                         self.play_button,
@@ -526,10 +522,37 @@ class GuitarTAApp:
         self._refresh_all()
 
     def _load_video(self, note: Note) -> None:
-        path = note.media_path
-        media = fvideo.VideoMedia(path)
-        self.video.playlist = [media]
+        path = Path(note.media_path).expanduser()
+        if not path.exists():
+            self.video = self._make_video()
+            self.video_status.value = f"영상 파일을 찾을 수 없습니다: {path}"
+            return
+
+        media = fvideo.VideoMedia(path.resolve().as_uri())
+        self.video = self._make_video([media])
         self.video.playback_rate = note.playback_rate
+        self.video_status.value = f"영상 준비 중: {path.name}"
+
+    def _make_video(self, playlist: Optional[List[fvideo.VideoMedia]] = None) -> fvideo.Video:
+        return fvideo.Video(
+            expand=True,
+            playlist=playlist or [],
+            aspect_ratio=16 / 9,
+            autoplay=False,
+            fill_color=BG,
+            volume=100,
+            on_loaded=self._on_video_loaded,
+            on_error=self._on_video_error,
+        )
+
+    def _on_video_loaded(self, event: ft.ControlEvent) -> None:
+        self.video_status.value = "영상이 준비되었습니다."
+        self.page.update()
+
+    def _on_video_error(self, event: ft.ControlEvent) -> None:
+        detail = getattr(event, "data", "") or "알 수 없는 오류"
+        self.video_status.value = f"영상 로드 오류: {detail}"
+        self.page.update()
 
     def _play_video(self, event: ft.ControlEvent) -> None:
         self._call_video("play")

@@ -1,6 +1,6 @@
 [project]
 name = "guitarta"
-version = "0.1.2"
+version = "0.1.3"
 description = "macOS guitar and bass practice app built with Python and Flet."
 requires-python = ">=3.9"
 dependencies = [
