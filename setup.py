@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="guitarta",
-    version="0.1.7",
+    version="0.1.8",
     description="macOS guitar and bass practice app built with Python and Flet.",
     package_dir={"": "src"},
     packages=find_packages("src"),

@@ -55,13 +55,14 @@ class GuitarTAApp:
 
         self.new_title_input = self._text_field("새 노트 제목", expand=True)
         self.url_input = self._text_field("유튜브 링크", expand=True)
-        self.category_input = self._text_field("카테고리", width=150, value="미분류")
+        self.category_input = self._text_field("카테고리", width=220, value="미분류")
         self.download_status = ft.Text("", color=MUTED, size=12)
         self.note_dialog_mode = "create"
         self.note_dialog = self._note_settings_dialog()
         self.video_status = ft.Text("", color=MUTED, size=12)
         self.category_dropdown = ft.Dropdown(
             label="카테고리",
+            width=320,
             dense=True,
             border_color="#BCA77C",
             focused_border_color=SIDEBAR_TEXT,
@@ -100,8 +101,8 @@ class GuitarTAApp:
         )
 
         self.marker_name_input = self._text_field("구간 이름", expand=True, value="반복 구간")
-        self.marker_start_input = self._text_field("시작 ms", width=105, value="0")
-        self.marker_end_input = self._text_field("종료 ms", width=105, value="0")
+        self.marker_start_input = self._text_field("시작", width=105, value="00:00:00")
+        self.marker_end_input = self._text_field("종료", width=105, value="00:00:00")
         self.marker_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
         self.loop_status = ft.Text("반복 대기", color=MUTED, size=12)
 
@@ -140,8 +141,6 @@ class GuitarTAApp:
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    ft.Text("연습 노트", size=13, color=SIDEBAR_MUTED),
-                    ft.Divider(color="#BCA77C"),
                     ft.ElevatedButton(
                         text="새로운 노트 생성",
                         icon=ft.Icons.ADD_ROUNDED,
@@ -153,6 +152,7 @@ class GuitarTAApp:
                             padding=ft.padding.symmetric(horizontal=12, vertical=12),
                         ),
                     ),
+                    ft.Divider(color="#BCA77C"),
                     self.category_dropdown,
                     ft.Row(
                         [
@@ -221,7 +221,7 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.7  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.8  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
@@ -245,63 +245,63 @@ class GuitarTAApp:
         self.rate_slider.value = self.selected_note.playback_rate
         self.rate_text.value = f"{self.selected_note.playback_rate:.2f}x"
 
-        return ft.Column(
-            [
-                ft.Row(
-                    [
-                        ft.Column(
-                            [
-                                ft.Text(
-                                    self.selected_note.title,
-                                    color=BEIGE,
-                                    size=20,
-                                    weight=ft.FontWeight.BOLD,
-                                    max_lines=1,
-                                    overflow=ft.TextOverflow.ELLIPSIS,
-                                ),
-                                ft.Text(self._category_name(self.selected_note.category_id), color=MUTED, size=12),
-                            ],
-                            spacing=2,
-                            expand=True,
-                        ),
-                        self.save_note_button,
-                    ],
-                    spacing=10,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                ),
-                ft.Row(
-                    [
-                        ft.Container(
-                            content=self.video,
-                            bgcolor="#050505",
-                            border=ft.border.all(1, LINE),
-                            border_radius=8,
-                            padding=ft.padding.all(8),
-                            expand=1,
-                            height=560,
-                        ),
-                        ft.Container(
-                            content=self._practice_panel(),
-                            width=330,
-                            height=560,
-                        ),
-                    ],
-                    spacing=18,
-                    vertical_alignment=ft.CrossAxisAlignment.START,
-                ),
-                self.video_status,
-                ft.Divider(color=LINE),
-                ft.Column(
-                    [
-                        ft.Text("노트 메모", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
-                        self.memo_input,
-                    ],
-                    spacing=10,
-                ),
-            ],
+        return ft.Container(
+            padding=ft.padding.only(right=20),
             expand=True,
-            scroll=ft.ScrollMode.AUTO,
-            spacing=14,
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Column(
+                                [
+                                    ft.Text(
+                                        self.selected_note.title,
+                                        color=BEIGE,
+                                        size=20,
+                                        weight=ft.FontWeight.BOLD,
+                                        max_lines=1,
+                                        overflow=ft.TextOverflow.ELLIPSIS,
+                                    ),
+                                    ft.Text(self._category_name(self.selected_note.category_id), color=MUTED, size=12),
+                                ],
+                                spacing=2,
+                                expand=True,
+                            ),
+                            self.save_note_button,
+                        ],
+                        spacing=10,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Row(
+                        [
+                            ft.Container(
+                                content=self.video,
+                                bgcolor="#050505",
+                                border=ft.border.all(1, LINE),
+                                border_radius=8,
+                                padding=ft.padding.all(8),
+                                expand=1,
+                                height=560,
+                            ),
+                            ft.Container(content=self._practice_panel(), width=390),
+                        ],
+                        spacing=18,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
+                    ),
+                    self.video_status,
+                    ft.Divider(color=LINE),
+                    ft.Column(
+                        [
+                            ft.Text("노트 메모", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
+                            self.memo_input,
+                        ],
+                        spacing=10,
+                    ),
+                ],
+                expand=True,
+                scroll=ft.ScrollMode.AUTO,
+                spacing=14,
+            ),
         )
 
     def _download_panel(self) -> ft.Control:
@@ -333,18 +333,20 @@ class GuitarTAApp:
             bgcolor=PANEL,
             title=ft.Text("노트 설정", color=BEIGE, weight=ft.FontWeight.BOLD),
             content=ft.Container(
-                width=560,
+                width=480,
                 content=ft.Column(
                     [
-                        self.new_title_input,
-                        ft.Row([self.category_input], spacing=10),
+                        ft.Row([self.new_title_input, self.category_input], spacing=10),
                         self.url_input,
                         self.download_status,
                     ],
                     tight=True,
-                    spacing=10,
+                    spacing=8,
                 ),
             ),
+            inset_padding=ft.padding.symmetric(horizontal=32, vertical=24),
+            content_padding=ft.padding.only(left=24, right=24, top=8, bottom=8),
+            actions_padding=ft.padding.only(left=16, right=16, bottom=14),
             actions=[
                 ft.TextButton("취소", on_click=self._close_note_settings),
                 ft.ElevatedButton(
@@ -388,49 +390,60 @@ class GuitarTAApp:
         self.page.close(self.note_dialog)
 
     def _practice_panel(self) -> ft.Control:
-        return ft.Column(
-            [
-                ft.Text("배속", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
-                ft.Row(
-                    [
-                        ft.Container(self.rate_slider, expand=True),
-                        self.rate_text,
-                    ],
-                    spacing=8,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                ),
-                ft.Divider(color=LINE),
-                ft.Row(
-                    [
-                        ft.Text("반복 연습 구간", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
-                        self.loop_status,
-                    ],
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                ),
-                self.marker_name_input,
-                ft.Row(
-                    [
-                        self.marker_start_input,
-                        self._button("시작 위치", ft.Icons.MY_LOCATION_ROUNDED, self._capture_position),
-                        self.marker_end_input,
-                        self._button("종료 위치", ft.Icons.FLAG_ROUNDED, self._capture_end_position),
-                    ],
-                    spacing=8,
-                    wrap=True,
-                ),
-                ft.Row(
-                    [
-                        self._button("구간 추가", ft.Icons.ADD_ROUNDED, self._add_marker),
-                        self._button("반복 시작", ft.Icons.REPEAT_ROUNDED, self._start_loop),
-                        self._button("반복 정지", ft.Icons.STOP_ROUNDED, self._stop_loop),
-                    ],
-                    spacing=8,
-                    wrap=True,
-                ),
-                ft.Divider(color=LINE),
-                ft.Container(self.marker_list, expand=True),
-            ],
-            spacing=10,
+        return ft.Container(
+            border=ft.border.only(left=ft.BorderSide(1, LINE)),
+            padding=ft.padding.only(left=18),
+            content=ft.Column(
+                [
+                    ft.Text("배속", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
+                    ft.Row(
+                        [
+                            ft.Container(self.rate_slider, expand=True),
+                            self.rate_text,
+                        ],
+                        spacing=10,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Divider(color=LINE),
+                    ft.Row(
+                        [
+                            ft.Text("반복 연습 구간", color=BEIGE, size=18, weight=ft.FontWeight.BOLD, expand=True),
+                            self.loop_status,
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    self.marker_name_input,
+                    ft.Row(
+                        [
+                            ft.Text("시작", color=MUTED, width=40),
+                            self.marker_start_input,
+                            self._compact_button("현재 위치", ft.Icons.MY_LOCATION_ROUNDED, self._capture_position),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Row(
+                        [
+                            ft.Text("종료", color=MUTED, width=40),
+                            self.marker_end_input,
+                            self._compact_button("현재 위치", ft.Icons.FLAG_ROUNDED, self._capture_end_position),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Row(
+                        [
+                            self._compact_button("추가", ft.Icons.ADD_ROUNDED, self._add_marker),
+                            self._compact_button("시작", ft.Icons.REPEAT_ROUNDED, self._start_loop),
+                            self._compact_button("정지", ft.Icons.STOP_ROUNDED, self._stop_loop),
+                        ],
+                        spacing=8,
+                    ),
+                    ft.Divider(color=LINE),
+                    ft.Container(self.marker_list, height=160),
+                ],
+                spacing=10,
+            ),
         )
 
     def _refresh_all(self) -> None:
@@ -701,13 +714,13 @@ class GuitarTAApp:
     def _capture_position(self, event: ft.ControlEvent) -> None:
         value = self._video_position_ms()
         self.current_position_ms = value
-        self.marker_start_input.value = str(value)
+        self.marker_start_input.value = self._format_ms(value)
         self.page.update()
 
     def _capture_end_position(self, event: ft.ControlEvent) -> None:
         value = self._video_position_ms()
         self.current_position_ms = value
-        self.marker_end_input.value = str(value)
+        self.marker_end_input.value = self._format_ms(value)
         self.page.update()
 
     def _add_marker(self, event: ft.ControlEvent) -> None:
@@ -716,8 +729,8 @@ class GuitarTAApp:
         marker = self.repo.create_tempo_marker(
             note_id=self.selected_note.id,
             name=self.marker_name_input.value or "새 구간",
-            start_ms=self._int_value(self.marker_start_input.value, 0),
-            end_ms=self._int_value(self.marker_end_input.value, 0),
+            start_ms=self._timecode_to_ms(self.marker_start_input.value),
+            end_ms=self._timecode_to_ms(self.marker_end_input.value),
             bpm=120,
             beats_per_bar=4,
             accent_first_beat=True,
@@ -730,8 +743,8 @@ class GuitarTAApp:
     def _select_marker(self, marker: TempoMarker) -> None:
         self.selected_marker = marker
         self.marker_name_input.value = marker.name
-        self.marker_start_input.value = str(marker.start_ms)
-        self.marker_end_input.value = str(marker.end_ms)
+        self.marker_start_input.value = self._format_ms(marker.start_ms)
+        self.marker_end_input.value = self._format_ms(marker.end_ms)
         self._seek_ms(marker.start_ms)
         self._render_markers()
         self.page.update()
@@ -778,7 +791,8 @@ class GuitarTAApp:
         self._cancel_loop_timer()
         if not marker or marker.end_ms <= marker.start_ms:
             return
-        seconds = (marker.end_ms - marker.start_ms) / 1000
+        rate = max(0.1, float(self.rate_slider.value or 1.0))
+        seconds = ((marker.end_ms - marker.start_ms) / 1000) / rate
         self.loop_timer = threading.Timer(seconds, lambda: self._restart_loop_from_timer(marker))
         self.loop_timer.daemon = True
         self.loop_timer.start()
@@ -850,6 +864,19 @@ class GuitarTAApp:
             ),
         )
 
+    def _compact_button(self, label: str, icon: str, handler) -> ft.ElevatedButton:
+        return ft.ElevatedButton(
+            text=label,
+            icon=icon,
+            on_click=handler,
+            style=ft.ButtonStyle(
+                bgcolor=ACCENT,
+                color=BG,
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            ),
+        )
+
     @staticmethod
     def _int_value(value: Optional[str], default: int) -> int:
         try:
@@ -859,6 +886,30 @@ class GuitarTAApp:
 
     @staticmethod
     def _format_ms(value: int) -> str:
-        seconds = max(0, value) // 1000
-        minutes = seconds // 60
-        return f"{minutes:02d}:{seconds % 60:02d}"
+        total_ms = max(0, value)
+        minutes = total_ms // 60000
+        seconds = (total_ms % 60000) // 1000
+        centiseconds = (total_ms % 1000) // 10
+        return f"{minutes:02d}:{seconds:02d}:{centiseconds:02d}"
+
+    @staticmethod
+    def _timecode_to_ms(value: Optional[str]) -> int:
+        text = (value or "").strip()
+        if not text:
+            return 0
+        if text.isdigit():
+            return int(text)
+        parts = text.split(":")
+        try:
+            if len(parts) == 3:
+                minutes = int(parts[0] or 0)
+                seconds = int(parts[1] or 0)
+                centiseconds = int(parts[2] or 0)
+                return max(0, minutes * 60000 + seconds * 1000 + centiseconds * 10)
+            if len(parts) == 2:
+                minutes = int(parts[0] or 0)
+                seconds = int(parts[1] or 0)
+                return max(0, minutes * 60000 + seconds * 1000)
+            return max(0, int(float(text) * 1000))
+        except ValueError:
+            return 0
