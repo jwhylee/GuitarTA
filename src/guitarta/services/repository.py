@@ -138,6 +138,22 @@ class Repository:
                 (title.strip() or "새 연습 노트", memo, playback_rate, category_id, note_id),
             )
 
+    def update_note_media(
+        self,
+        note_id: int,
+        source_url: str,
+        media_path: str,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE notes
+                SET source_url = ?, media_path = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (source_url, media_path, note_id),
+            )
+
     def tempo_markers(self, note_id: int) -> List[TempoMarker]:
         with self._connect() as conn:
             rows = conn.execute(
