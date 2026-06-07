@@ -58,7 +58,7 @@ class GuitarTAApp:
 
         self.new_title_input = self._text_field("새 노트 제목", width=250)
         self.url_input = self._text_field("유튜브 링크", expand=True)
-        self.add_category_input = self._text_field("새 카테고리", width=260, value="")
+        self.add_category_input = self._bare_text_field(width=320)
         self.download_status = ft.Text("", color=MUTED, size=12)
         self.note_dialog_mode = "create"
         self.note_category_dropdown = self._category_dropdown(
@@ -108,8 +108,8 @@ class GuitarTAApp:
         )
 
         self.marker_name_input = self._text_field("구간 이름", expand=True, value="반복 구간")
-        self.marker_start_input = self._text_field("시작", width=105, value="00:00:00")
-        self.marker_end_input = self._text_field("종료", width=105, value="00:00:00")
+        self.marker_start_input = self._text_field("시작", width=145, value="00:00:00")
+        self.marker_end_input = self._text_field("종료", width=145, value="00:00:00")
         self.marker_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
         self.loop_status = ft.Text("반복 대기", color=MUTED, size=12)
 
@@ -241,7 +241,7 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.16  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.17  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
@@ -525,7 +525,7 @@ class GuitarTAApp:
                         [
                             ft.Text("시작", color=MUTED, width=40),
                             self.marker_start_input,
-                            self._compact_button("현재 위치", ft.Icons.MY_LOCATION_ROUNDED, self._capture_position),
+                            self._compact_button("현재 위치", ft.Icons.MY_LOCATION_ROUNDED, self._capture_position, expand=True),
                         ],
                         spacing=8,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -534,7 +534,7 @@ class GuitarTAApp:
                         [
                             ft.Text("종료", color=MUTED, width=40),
                             self.marker_end_input,
-                            self._compact_button("현재 위치", ft.Icons.FLAG_ROUNDED, self._capture_end_position),
+                            self._compact_button("현재 위치", ft.Icons.FLAG_ROUNDED, self._capture_end_position, expand=True),
                         ],
                         spacing=8,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -543,9 +543,9 @@ class GuitarTAApp:
                     ft.Text("반복구간 조작", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
                     ft.Row(
                         [
-                            self._compact_button("추가", ft.Icons.ADD_ROUNDED, self._add_marker),
-                            self._compact_button("시작", ft.Icons.REPEAT_ROUNDED, self._start_loop),
-                            self._compact_button("정지", ft.Icons.STOP_ROUNDED, self._stop_loop),
+                            self._compact_button("추가", ft.Icons.ADD_ROUNDED, self._add_marker, expand=True),
+                            self._compact_button("시작", ft.Icons.REPEAT_ROUNDED, self._start_loop, expand=True),
+                            self._compact_button("정지", ft.Icons.STOP_ROUNDED, self._stop_loop, expand=True),
                         ],
                         spacing=8,
                     ),
@@ -686,9 +686,8 @@ class GuitarTAApp:
         self.notes = self.repo.notes(self.selected_category_id)
         self._render_sidebar()
         self._render_note_category_dropdown()
-        self.category_dialog = self._category_dialog()
+        self.category_dialog.open = False
         self.page.close(self.category_dialog)
-        self.page.open(self.category_dialog)
         self.page.update()
 
     def _handle_keyboard_event(self, event: ft.KeyboardEvent) -> None:
@@ -1142,17 +1141,31 @@ class GuitarTAApp:
             ),
         )
 
-    def _compact_button(self, label: str, icon: str, handler) -> ft.ElevatedButton:
+    def _compact_button(self, label: str, icon: str, handler, expand: bool = False) -> ft.ElevatedButton:
         return ft.ElevatedButton(
             text=label,
             icon=icon,
             on_click=handler,
+            expand=expand,
             style=ft.ButtonStyle(
                 bgcolor=ACCENT,
                 color=BG,
                 shape=ft.RoundedRectangleBorder(radius=6),
                 padding=ft.padding.symmetric(horizontal=10, vertical=8),
             ),
+        )
+
+    def _bare_text_field(self, width: Optional[int] = None, expand: bool = False, value: str = "") -> ft.TextField:
+        return ft.TextField(
+            value=value,
+            width=width,
+            expand=expand,
+            dense=True,
+            border_color=LINE,
+            focused_border_color=ACCENT,
+            bgcolor=PANEL_2,
+            color=TEXT,
+            cursor_color=ACCENT,
         )
 
     def _danger_button(self, label: str, icon: str, handler) -> ft.ElevatedButton:
