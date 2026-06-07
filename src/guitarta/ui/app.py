@@ -92,6 +92,7 @@ class GuitarTAApp:
             color=TEXT,
             label_style=ft.TextStyle(color=MUTED),
         )
+        self.note_settings_button = self._button("노트 설정", ft.Icons.TUNE_ROUNDED, self._open_note_settings)
         self.save_note_button = self._button("저장", ft.Icons.SAVE_OUTLINED, self._save_note)
         self.delete_note_button = self._danger_button("삭제", ft.Icons.DELETE_OUTLINE_ROUNDED, self._open_delete_note)
 
@@ -107,7 +108,7 @@ class GuitarTAApp:
             on_change=self._change_rate,
         )
 
-        self.marker_name_input = self._text_field("구간 이름", expand=True, value="반복 구간")
+        self.marker_name_input = self._marker_name_field()
         self.marker_start_input = self._text_field("시작", width=145, value="00:00:00")
         self.marker_end_input = self._text_field("종료", width=145, value="00:00:00")
         self.marker_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
@@ -138,7 +139,8 @@ class GuitarTAApp:
                 [
                     ft.Row(
                         [
-                            ft.Text("GuitarTA", size=28, color=SIDEBAR_TEXT, weight=ft.FontWeight.BOLD, expand=True),
+                            ft.Text("GuitarTA", size=28, color=SIDEBAR_TEXT, weight=ft.FontWeight.BOLD),
+                            ft.Text("v1.19", color=SIDEBAR_MUTED, size=12, expand=True),
                             ft.IconButton(
                                 icon=ft.Icons.CHEVRON_LEFT_ROUNDED,
                                 icon_color=SIDEBAR_TEXT,
@@ -227,28 +229,11 @@ class GuitarTAApp:
             padding=ft.padding.all(20),
             content=ft.Column(
                 [
-                    self._top_bar(),
                     self.detail_area,
                 ],
                 expand=True,
-                spacing=16,
+                spacing=0,
             ),
-        )
-
-    def _top_bar(self) -> ft.Control:
-        return ft.Row(
-            [
-                ft.Column(
-                    [
-                        ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.18  기타/베이스 연습 노트", color=MUTED, size=12),
-                    ],
-                    spacing=2,
-                    expand=True,
-                ),
-                self._button("노트 설정", ft.Icons.TUNE_ROUNDED, self._open_note_settings),
-            ],
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
     def _note_detail(self) -> ft.Control:
@@ -287,7 +272,7 @@ class GuitarTAApp:
                                 expand=True,
                             ),
                             ft.Row(
-                                [self.save_note_button, self.delete_note_button],
+                                [self.note_settings_button, self.save_note_button, self.delete_note_button],
                                 spacing=10,
                             ),
                         ],
@@ -404,29 +389,23 @@ class GuitarTAApp:
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             content=self._category_dialog_content(),
-            actions=[
-                ft.ElevatedButton(
-                    text="추가",
-                    icon=ft.Icons.ADD_ROUNDED,
-                    on_click=self._add_category,
-                    style=ft.ButtonStyle(
-                        bgcolor=ACCENT,
-                        color=BG,
-                        shape=ft.RoundedRectangleBorder(radius=6),
-                    ),
-                ),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
+            actions=[],
         )
 
     def _category_dialog_content(self) -> ft.Container:
-        self.add_category_input = self._bare_text_field(width=320)
+        self.add_category_input = self._bare_text_field(expand=True)
         return ft.Container(
             width=360,
             content=ft.Column(
                 [
                     ft.Text("카테고리 추가", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
-                    self.add_category_input,
+                    ft.Row(
+                        [
+                            self.add_category_input,
+                            self._compact_button("추가", ft.Icons.ADD_ROUNDED, self._add_category),
+                        ],
+                        spacing=8,
+                    ),
                     ft.Divider(color=LINE),
                     ft.Text("카테고리 삭제", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
                     ft.Container(
@@ -516,13 +495,13 @@ class GuitarTAApp:
             padding=ft.padding.only(left=18),
             content=ft.Column(
                 [
-                    ft.Text("배속", color=BEIGE, size=16, weight=ft.FontWeight.BOLD),
                     ft.Row(
                         [
+                            ft.Text("배속", color=BEIGE, size=16, weight=ft.FontWeight.BOLD),
                             ft.Container(self.rate_slider, expand=True),
                             self.rate_text,
                         ],
-                        spacing=10,
+                        spacing=8,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                     ft.Divider(color=LINE),
@@ -1148,6 +1127,22 @@ class GuitarTAApp:
             color=TEXT,
             cursor_color=ACCENT,
             label_style=ft.TextStyle(color=MUTED),
+        )
+
+    def _marker_name_field(self) -> ft.TextField:
+        return ft.TextField(
+            label="구간 이름",
+            value="반복 구간",
+            expand=True,
+            dense=False,
+            height=56,
+            border_color=LINE,
+            focused_border_color=ACCENT,
+            bgcolor=PANEL_2,
+            color=TEXT,
+            cursor_color=ACCENT,
+            label_style=ft.TextStyle(color=MUTED),
+            content_padding=ft.padding.symmetric(horizontal=12, vertical=8),
         )
 
     def _button(self, label: str, icon: str, handler) -> ft.ElevatedButton:
