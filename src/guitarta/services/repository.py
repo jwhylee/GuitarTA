@@ -102,6 +102,10 @@ class Repository:
             row = conn.execute("SELECT * FROM categories WHERE name = ?", (clean_name,)).fetchone()
         return self._category(row)
 
+    def delete_category(self, category_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+
     def create_note(
         self,
         title: str,

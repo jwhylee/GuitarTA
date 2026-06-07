@@ -57,7 +57,7 @@ class GuitarTAApp:
         self.page.on_keyboard_event = self._handle_keyboard_event
 
         self.new_title_input = self._text_field("새 노트 제목", width=250)
-        self.url_input = self._text_field("유튜브 링크", width=430)
+        self.url_input = self._text_field("유튜브 링크", expand=True)
         self.add_category_input = self._text_field("새 카테고리", width=260, value="")
         self.download_status = ft.Text("", color=MUTED, size=12)
         self.note_dialog_mode = "create"
@@ -241,7 +241,7 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.14  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.15  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
@@ -287,7 +287,7 @@ class GuitarTAApp:
                                 expand=True,
                             ),
                             ft.Row(
-                                [self.delete_note_button, self.save_note_button],
+                                [self.save_note_button, self.delete_note_button],
                                 spacing=10,
                             ),
                         ],
@@ -355,15 +355,16 @@ class GuitarTAApp:
             title=ft.Text("노트 설정", color=BEIGE, size=22, weight=ft.FontWeight.BOLD),
             content=ft.Container(
                 width=500,
-                height=138,
+                height=172,
                 content=ft.Column(
                     [
                         ft.Row([self.new_title_input, self.note_category_dropdown], spacing=10),
+                        ft.Divider(color=LINE),
                         self.url_input,
                         self.download_status,
                     ],
                     tight=True,
-                    spacing=5,
+                    spacing=7,
                 ),
             ),
             inset_padding=ft.padding.symmetric(horizontal=32, vertical=24),
@@ -390,8 +391,42 @@ class GuitarTAApp:
         return ft.AlertDialog(
             modal=True,
             bgcolor=PANEL,
-            title=ft.Text("카테고리 추가", color=BEIGE, size=20, weight=ft.FontWeight.BOLD),
-            content=ft.Container(width=320, content=self.add_category_input),
+            title=ft.Text("카테고리 관리", color=BEIGE, size=20, weight=ft.FontWeight.BOLD),
+            content=ft.Container(
+                width=360,
+                content=ft.Column(
+                    [
+                        ft.Text("카테고리 추가", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
+                        self.add_category_input,
+                        ft.Divider(color=LINE),
+                        ft.Text("카테고리 삭제", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
+                        ft.Container(
+                            height=140,
+                            content=ft.Column(
+                                [
+                                    ft.Row(
+                                        [
+                                            ft.Text(category.name, color=TEXT, expand=True),
+                                            ft.IconButton(
+                                                icon=ft.Icons.DELETE_OUTLINE_ROUNDED,
+                                                icon_color=DANGER,
+                                                tooltip="카테고리 삭제",
+                                                on_click=lambda e, c=category: self._delete_category(c),
+                                            ),
+                                        ],
+                                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                    )
+                                    for category in self._deletable_categories()
+                                ],
+                                spacing=2,
+                                scroll=ft.ScrollMode.AUTO,
+                            ),
+                        ),
+                    ],
+                    tight=True,
+                    spacing=8,
+                ),
+            ),
             actions=[
                 ft.TextButton("취소", on_click=lambda e: self.page.close(self.category_dialog)),
                 ft.ElevatedButton(
@@ -483,6 +518,7 @@ class GuitarTAApp:
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
+                    ft.Container(height=2),
                     self.marker_name_input,
                     ft.Row(
                         [
@@ -624,6 +660,7 @@ class GuitarTAApp:
 
     def _open_category_dialog(self, event: ft.ControlEvent) -> None:
         self.add_category_input.value = ""
+        self.category_dialog = self._category_dialog()
         self.page.open(self.category_dialog)
 
     def _add_category(self, event: ft.ControlEvent) -> None:
@@ -636,6 +673,21 @@ class GuitarTAApp:
         self._render_note_category_dropdown()
         self.add_category_input.value = ""
         self.page.close(self.category_dialog)
+        self.page.update()
+
+    def _delete_category(self, category: Category) -> None:
+        self.repo.delete_category(category.id)
+        if self.selected_category_id == category.id:
+            self.selected_category_id = None
+        if self.selected_note and self.selected_note.category_id == category.id:
+            self.selected_note = self.repo.note(self.selected_note.id)
+        self.categories = self.repo.categories()
+        self.notes = self.repo.notes(self.selected_category_id)
+        self._render_sidebar()
+        self._render_note_category_dropdown()
+        self.category_dialog = self._category_dialog()
+        self.page.close(self.category_dialog)
+        self.page.open(self.category_dialog)
         self.page.update()
 
     def _handle_keyboard_event(self, event: ft.KeyboardEvent) -> None:
@@ -1006,6 +1058,10 @@ class GuitarTAApp:
             ),
         )
         return ordered if include_all else [category for category in ordered if category.name != "전체"]
+
+    def _deletable_categories(self) -> List[Category]:
+        protected = {"기타", "베이스", "미분류"}
+        return [category for category in self._ordered_categories(include_all=False) if category.name not in protected]
 
     def _category_options(self, include_all: bool, sidebar: bool) -> List[ft.dropdown.Option]:
         options: List[ft.dropdown.Option] = []
