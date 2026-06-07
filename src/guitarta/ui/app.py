@@ -228,7 +228,7 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.9  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.10  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
@@ -295,7 +295,6 @@ class GuitarTAApp:
                         spacing=18,
                         vertical_alignment=ft.CrossAxisAlignment.START,
                     ),
-                    self.video_status,
                     ft.Divider(color=LINE),
                     ft.Column(
                         [
@@ -473,12 +472,14 @@ class GuitarTAApp:
             ft.dropdown.Option(
                 key="all",
                 text="전체",
+                content=ft.Text("전체", color=SIDEBAR_TEXT, size=14, weight=ft.FontWeight.BOLD),
                 text_style=ft.TextStyle(color=SIDEBAR_TEXT, size=14, weight=ft.FontWeight.BOLD),
             )
         ] + [
             ft.dropdown.Option(
                 key=str(category.id),
                 text=category.name,
+                content=ft.Text(category.name, color=SIDEBAR_TEXT, size=14),
                 text_style=ft.TextStyle(color=SIDEBAR_TEXT, size=14),
             )
             for category in self.categories
