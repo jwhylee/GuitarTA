@@ -41,6 +41,7 @@ class GuitarTAApp:
         self.loop_timer: Optional[threading.Timer] = None
         self.loop_active = False
         self.restore_app_fullscreen = False
+        self.dialog_category_name = "기타"
 
         self.categories: List[Category] = []
         self.notes: List[Note] = []
@@ -53,13 +54,16 @@ class GuitarTAApp:
         self.page.theme_mode = ft.ThemeMode.DARK
         self.page.bgcolor = BG
         self.page.padding = 0
+        self.page.on_keyboard_event = self._handle_keyboard_event
 
         self.new_title_input = self._text_field("새 노트 제목", width=250)
         self.url_input = self._text_field("유튜브 링크", width=430)
-        self.category_input = self._text_field("카테고리", width=220, value="미분류")
+        self.category_input = self._text_field("직접 입력", width=220, value="")
+        self.category_picker = ft.Column(spacing=6)
         self.download_status = ft.Text("", color=MUTED, size=12)
         self.note_dialog_mode = "create"
         self.note_dialog = self._note_settings_dialog()
+        self.delete_dialog = self._delete_note_dialog()
         self.video_status = ft.Text("", color=MUTED, size=12)
         self.category_dropdown = ft.Dropdown(
             label="카테고리",
@@ -94,6 +98,7 @@ class GuitarTAApp:
         )
         self.note_category_input = self._text_field("카테고리", width=160)
         self.save_note_button = self._button("저장", ft.Icons.SAVE_OUTLINED, self._save_note)
+        self.delete_note_button = self._danger_button("삭제", ft.Icons.DELETE_OUTLINE_ROUNDED, self._open_delete_note)
 
         self.video = self._make_video()
         self.rate_text = ft.Text("1.00x", color=BEIGE, size=16, weight=ft.FontWeight.BOLD)
@@ -228,7 +233,7 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.10  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.11  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
@@ -274,6 +279,7 @@ class GuitarTAApp:
                                 spacing=2,
                                 expand=True,
                             ),
+                            self.delete_note_button,
                             self.save_note_button,
                         ],
                         spacing=10,
@@ -340,15 +346,18 @@ class GuitarTAApp:
             title=ft.Text("노트 설정", color=BEIGE, size=22, weight=ft.FontWeight.BOLD),
             content=ft.Container(
                 width=500,
-                height=138,
+                height=190,
                 content=ft.Column(
                     [
-                        ft.Row([self.new_title_input, self.category_input], spacing=10),
+                        self.new_title_input,
+                        ft.Text("카테고리", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
+                        self.category_picker,
+                        self.category_input,
                         self.url_input,
                         self.download_status,
                     ],
                     tight=True,
-                    spacing=6,
+                    spacing=5,
                 ),
             ),
             inset_padding=ft.padding.symmetric(horizontal=32, vertical=24),
@@ -371,14 +380,38 @@ class GuitarTAApp:
             actions_alignment=ft.MainAxisAlignment.END,
         )
 
+    def _delete_note_dialog(self) -> ft.AlertDialog:
+        return ft.AlertDialog(
+            modal=True,
+            bgcolor=PANEL,
+            title=ft.Text("노트 삭제", color=BEIGE, size=20, weight=ft.FontWeight.BOLD),
+            content=ft.Text("선택한 노트를 삭제할까요? 다운로드된 영상 파일은 유지됩니다.", color=TEXT),
+            actions=[
+                ft.TextButton("취소", on_click=lambda e: self.page.close(self.delete_dialog)),
+                ft.ElevatedButton(
+                    text="삭제",
+                    icon=ft.Icons.DELETE_OUTLINE_ROUNDED,
+                    on_click=self._delete_selected_note,
+                    style=ft.ButtonStyle(
+                        bgcolor=DANGER,
+                        color=TEXT,
+                        shape=ft.RoundedRectangleBorder(radius=6),
+                    ),
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
     def _open_new_note(self, event: ft.ControlEvent) -> None:
         self.note_dialog_mode = "create"
         self.note_dialog.title.value = "새 노트 생성"
         self.new_title_input.value = ""
-        self.category_input.value = "미분류"
+        self.dialog_category_name = "기타"
+        self.category_input.value = ""
         self.url_input.value = ""
         self.url_input.label = "유튜브 링크"
         self.download_status.value = ""
+        self._render_category_picker()
         self.page.open(self.note_dialog)
 
     def _open_note_settings(self, event: ft.ControlEvent) -> None:
@@ -388,10 +421,12 @@ class GuitarTAApp:
         self.note_dialog_mode = "update"
         self.note_dialog.title.value = "노트 설정"
         self.new_title_input.value = self.selected_note.title
-        self.category_input.value = self._category_name(self.selected_note.category_id)
+        self.dialog_category_name = self._category_name(self.selected_note.category_id)
+        self.category_input.value = ""
         self.url_input.value = ""
         self.url_input.label = "새 유튜브 링크"
         self.download_status.value = "링크를 입력하면 현재 노트의 영상만 교체됩니다."
+        self._render_category_picker()
         self.page.open(self.note_dialog)
 
     def _close_note_settings(self, event: ft.ControlEvent) -> None:
@@ -458,6 +493,10 @@ class GuitarTAApp:
 
     def _refresh_all(self) -> None:
         self.categories = self.repo.categories()
+        if self.selected_category_id is None:
+            guitar = self._category_by_name("기타")
+            if guitar:
+                self.selected_category_id = guitar.id
         self.notes = self.repo.notes(self.selected_category_id)
         if self.selected_note:
             fresh = self.repo.note(self.selected_note.id)
@@ -468,6 +507,7 @@ class GuitarTAApp:
         self.page.update()
 
     def _render_sidebar(self) -> None:
+        ordered_categories = self._ordered_categories()
         self.category_dropdown.options = [
             ft.dropdown.Option(
                 key="all",
@@ -482,7 +522,7 @@ class GuitarTAApp:
                 content=ft.Text(category.name, color=SIDEBAR_TEXT, size=14),
                 text_style=ft.TextStyle(color=SIDEBAR_TEXT, size=14),
             )
-            for category in self.categories
+            for category in ordered_categories
         ]
         self.category_dropdown.value = (
             str(self.selected_category_id) if self.selected_category_id is not None else "all"
@@ -491,6 +531,35 @@ class GuitarTAApp:
             self._note_tile(note, self.selected_note is not None and note.id == self.selected_note.id)
             for note in self.notes
         ]
+
+    def _render_category_picker(self) -> None:
+        controls = []
+        for category in self._ordered_categories(include_all=False):
+            selected = category.name == self.dialog_category_name
+            controls.append(
+                ft.Container(
+                    content=ft.Text(
+                        category.name,
+                        color=BG if selected else TEXT,
+                        size=12,
+                        weight=ft.FontWeight.BOLD if selected else ft.FontWeight.NORMAL,
+                    ),
+                    bgcolor=ACCENT if selected else PANEL_2,
+                    border=ft.border.all(1, ACCENT if selected else LINE),
+                    border_radius=6,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=7),
+                    on_click=lambda e, name=category.name: self._select_dialog_category(name),
+                )
+            )
+        self.category_picker.controls = [
+            ft.Row(controls, spacing=6, wrap=True),
+        ]
+
+    def _select_dialog_category(self, name: str) -> None:
+        self.dialog_category_name = name
+        self.category_input.value = ""
+        self._render_category_picker()
+        self.page.update()
 
     def _render_detail(self) -> None:
         if self.selected_note:
@@ -566,6 +635,36 @@ class GuitarTAApp:
         self._render_sidebar()
         self.page.update()
 
+    def _handle_keyboard_event(self, event: ft.KeyboardEvent) -> None:
+        if event.key.lower() == "s" and (event.meta or event.ctrl):
+            self._save_note_from_shortcut()
+
+    def _save_note_from_shortcut(self) -> None:
+        if not self.selected_note:
+            return
+        self._save_note(None)
+
+    def _open_delete_note(self, event: ft.ControlEvent) -> None:
+        if not self.selected_note:
+            return
+        self.page.open(self.delete_dialog)
+
+    def _delete_selected_note(self, event: ft.ControlEvent) -> None:
+        if not self.selected_note:
+            self.page.close(self.delete_dialog)
+            return
+        self.loop_active = False
+        self._cancel_loop_timer()
+        self.repo.delete_note(self.selected_note.id)
+        self.selected_note = None
+        self.selected_marker = None
+        self.markers = []
+        self.notes = self.repo.notes(self.selected_category_id)
+        self.page.close(self.delete_dialog)
+        self._render_sidebar()
+        self._render_detail()
+        self.page.update()
+
     def _toggle_sidebar(self, event: ft.ControlEvent) -> None:
         self.sidebar_open = not self.sidebar_open
         self.sidebar_host.visible = self.sidebar_open
@@ -588,7 +687,7 @@ class GuitarTAApp:
             return
         url = self.url_input.value or ""
         note_title = self.new_title_input.value or ""
-        category_name = self.category_input.value or "미분류"
+        category_name = (self.category_input.value or "").strip() or self.dialog_category_name or "기타"
         if self.note_dialog_mode == "create" and not url.strip():
             self.download_status.value = "유튜브 링크를 입력하세요."
             self.page.update()
@@ -873,6 +972,23 @@ class GuitarTAApp:
                 return category.name
         return "미분류"
 
+    def _category_by_name(self, name: str) -> Optional[Category]:
+        for category in self.categories:
+            if category.name == name:
+                return category
+        return None
+
+    def _ordered_categories(self, include_all: bool = True) -> List[Category]:
+        priority = {"기타": 0, "베이스": 1}
+        ordered = sorted(
+            self.categories,
+            key=lambda category: (
+                priority.get(category.name, 10),
+                category.name,
+            ),
+        )
+        return ordered if include_all else [category for category in ordered if category.name != "전체"]
+
     def _text_field(self, label: str, width: Optional[int] = None, expand: bool = False, value: str = "") -> ft.TextField:
         return ft.TextField(
             label=label,
@@ -911,6 +1027,19 @@ class GuitarTAApp:
                 color=BG,
                 shape=ft.RoundedRectangleBorder(radius=6),
                 padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            ),
+        )
+
+    def _danger_button(self, label: str, icon: str, handler) -> ft.ElevatedButton:
+        return ft.ElevatedButton(
+            text=label,
+            icon=icon,
+            on_click=handler,
+            style=ft.ButtonStyle(
+                bgcolor=DANGER,
+                color=TEXT,
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.padding.symmetric(horizontal=12, vertical=10),
             ),
         )
 

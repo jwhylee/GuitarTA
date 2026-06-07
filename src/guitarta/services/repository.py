@@ -64,6 +64,10 @@ class Repository:
                 "INSERT OR IGNORE INTO categories(name) VALUES (?)",
                 ("미분류",),
             )
+            conn.executemany(
+                "INSERT OR IGNORE INTO categories(name) VALUES (?)",
+                [("기타",), ("베이스",)],
+            )
 
     def categories(self) -> List[Category]:
         with self._connect() as conn:
@@ -153,6 +157,10 @@ class Repository:
                 """,
                 (source_url, media_path, note_id),
             )
+
+    def delete_note(self, note_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
 
     def tempo_markers(self, note_id: int) -> List[TempoMarker]:
         with self._connect() as conn:
