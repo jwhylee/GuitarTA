@@ -25,6 +25,7 @@ MUTED = "#A99E8B"
 LINE = "#473E31"
 ACCENT = "#F0C982"
 DANGER = "#D96855"
+CATEGORY_ADD_CONTROL_HEIGHT = 40
 
 
 class GuitarTAApp:
@@ -140,7 +141,7 @@ class GuitarTAApp:
                     ft.Row(
                         [
                             ft.Text("GuitarTA", size=28, color=SIDEBAR_TEXT, weight=ft.FontWeight.BOLD),
-                            ft.Text("v1.21", color=SIDEBAR_MUTED, size=12, expand=True),
+                            ft.Text("v1.22", color=SIDEBAR_MUTED, size=12, expand=True),
                             ft.IconButton(
                                 icon=ft.Icons.CHEVRON_LEFT_ROUNDED,
                                 icon_color=SIDEBAR_TEXT,
@@ -388,7 +389,7 @@ class GuitarTAApp:
         )
 
     def _category_dialog_content(self) -> ft.Container:
-        self.add_category_input = self._bare_text_field(expand=True, height=48)
+        self.add_category_input = self._bare_text_field(expand=True, height=CATEGORY_ADD_CONTROL_HEIGHT)
         return ft.Container(
             width=360,
             content=ft.Column(
@@ -400,6 +401,7 @@ class GuitarTAApp:
                             self._category_add_button(),
                         ],
                         spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                     ft.Divider(color=LINE),
                     ft.Text("카테고리 삭제", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
@@ -1190,7 +1192,7 @@ class GuitarTAApp:
     def _category_add_button(self) -> ft.Container:
         return ft.Container(
             width=86,
-            height=48,
+            height=CATEGORY_ADD_CONTROL_HEIGHT,
             bgcolor=ACCENT,
             border_radius=6,
             alignment=ft.alignment.center,
