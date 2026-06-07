@@ -140,7 +140,7 @@ class GuitarTAApp:
                     ft.Row(
                         [
                             ft.Text("GuitarTA", size=28, color=SIDEBAR_TEXT, weight=ft.FontWeight.BOLD),
-                            ft.Text("v1.19", color=SIDEBAR_MUTED, size=12, expand=True),
+                            ft.Text("v1.20", color=SIDEBAR_MUTED, size=12, expand=True),
                             ft.IconButton(
                                 icon=ft.Icons.CHEVRON_LEFT_ROUNDED,
                                 icon_color=SIDEBAR_TEXT,
@@ -176,12 +176,7 @@ class GuitarTAApp:
                     ),
                     ft.Divider(color="#BCA77C"),
                     self.category_dropdown,
-                    ft.Row(
-                        [
-                            ft.Text("노트", color=SIDEBAR_TEXT, weight=ft.FontWeight.BOLD, expand=True),
-                            ft.Text("한 줄 보기", color=SIDEBAR_MUTED, size=12),
-                        ],
-                    ),
+                    ft.Divider(color="#BCA77C"),
                     self.note_list,
                 ],
                 expand=True,
@@ -393,7 +388,7 @@ class GuitarTAApp:
         )
 
     def _category_dialog_content(self) -> ft.Container:
-        self.add_category_input = self._bare_text_field(expand=True)
+        self.add_category_input = self._bare_text_field(expand=True, height=48)
         return ft.Container(
             width=360,
             content=ft.Column(
@@ -402,7 +397,7 @@ class GuitarTAApp:
                     ft.Row(
                         [
                             self.add_category_input,
-                            self._compact_button("추가", ft.Icons.ADD_ROUNDED, self._add_category),
+                            self._category_add_button(),
                         ],
                         spacing=8,
                     ),
@@ -1172,17 +1167,38 @@ class GuitarTAApp:
             ),
         )
 
-    def _bare_text_field(self, width: Optional[int] = None, expand: bool = False, value: str = "") -> ft.TextField:
+    def _bare_text_field(
+        self,
+        width: Optional[int] = None,
+        expand: bool = False,
+        value: str = "",
+        height: Optional[int] = None,
+    ) -> ft.TextField:
         return ft.TextField(
             value=value,
             width=width,
             expand=expand,
+            height=height,
             dense=True,
             border_color=LINE,
             focused_border_color=ACCENT,
             bgcolor=PANEL_2,
             color=TEXT,
             cursor_color=ACCENT,
+        )
+
+    def _category_add_button(self) -> ft.ElevatedButton:
+        return ft.ElevatedButton(
+            text="추가",
+            icon=ft.Icons.ADD_ROUNDED,
+            on_click=self._add_category,
+            height=48,
+            style=ft.ButtonStyle(
+                bgcolor=ACCENT,
+                color=BG,
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.padding.symmetric(horizontal=14, vertical=0),
+            ),
         )
 
     def _danger_button(self, label: str, icon: str, handler) -> ft.ElevatedButton:
