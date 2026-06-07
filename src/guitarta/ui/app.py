@@ -241,7 +241,7 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.13  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.14  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
@@ -286,8 +286,10 @@ class GuitarTAApp:
                                 spacing=2,
                                 expand=True,
                             ),
-                            self.delete_note_button,
-                            self.save_note_button,
+                            ft.Row(
+                                [self.delete_note_button, self.save_note_button],
+                                spacing=10,
+                            ),
                         ],
                         spacing=10,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -519,10 +521,6 @@ class GuitarTAApp:
 
     def _refresh_all(self) -> None:
         self.categories = self.repo.categories()
-        if self.selected_category_id is None:
-            guitar = self._category_by_name("기타")
-            if guitar:
-                self.selected_category_id = guitar.id
         self.notes = self.repo.notes(self.selected_category_id)
         if self.selected_note:
             fresh = self.repo.note(self.selected_note.id)
