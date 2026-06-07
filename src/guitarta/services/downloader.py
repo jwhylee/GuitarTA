@@ -131,12 +131,14 @@ class YouTubeDownloader:
             bufsize=1,
         )
         output_lines = []
+        existing_media_path: Optional[Path] = None
         assert process.stdout is not None
         for raw_line in process.stdout:
             line = raw_line.strip()
             if not line:
                 continue
             output_lines.append(line)
+            existing_media_path = existing_media_path or self._existing_media_from_line(line)
             if line.startswith("[download]"):
                 progress({"status": "downloading", "_percent_str": self._compact_progress(line)})
             elif "Merging formats" in line or "Deleting original file" in line:
@@ -149,8 +151,12 @@ class YouTubeDownloader:
         current = self._media_files()
         new_files = [path for path, mtime in current.items() if before.get(path) != mtime]
         if not new_files:
-            raise DownloadError("다운로드된 영상 파일을 찾지 못했습니다.")
-        media_path = max(new_files, key=lambda path: path.stat().st_mtime)
+            if existing_media_path and existing_media_path.exists():
+                media_path = existing_media_path
+            else:
+                raise DownloadError("다운로드된 영상 파일을 찾지 못했습니다.")
+        else:
+            media_path = max(new_files, key=lambda path: path.stat().st_mtime)
 
         return {
             "title": self._title_from_file(media_path),
@@ -233,6 +239,17 @@ class YouTubeDownloader:
         if marker in line:
             return line.replace("[download]", "").strip()
         return line
+
+    @staticmethod
+    def _existing_media_from_line(line: str) -> Optional[Path]:
+        marker = " has already been downloaded"
+        prefix = "[download] "
+        if marker not in line or not line.startswith(prefix):
+            return None
+        path = Path(line[len(prefix): line.index(marker)])
+        if path.suffix.lower() in {".mp4", ".m4v", ".mov", ".webm", ".mkv"}:
+            return path
+        return None
 
     @staticmethod
     def _title_from_file(path: Path) -> str:
