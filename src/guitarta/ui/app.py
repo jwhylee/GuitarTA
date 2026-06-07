@@ -241,7 +241,7 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.15  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.16  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
@@ -450,7 +450,7 @@ class GuitarTAApp:
             title=ft.Text("노트 삭제", color=BEIGE, size=20, weight=ft.FontWeight.BOLD),
             content=ft.Text("선택한 노트를 삭제할까요? 다운로드된 영상 파일은 유지됩니다.", color=TEXT),
             actions=[
-                ft.TextButton("취소", on_click=lambda e: self.page.close(self.delete_dialog)),
+                ft.TextButton("취소", on_click=self._close_delete_note),
                 ft.ElevatedButton(
                     text="삭제",
                     icon=ft.Icons.DELETE_OUTLINE_ROUNDED,
@@ -520,6 +520,7 @@ class GuitarTAApp:
                     ),
                     ft.Container(height=2),
                     self.marker_name_input,
+                    ft.Container(height=4),
                     ft.Row(
                         [
                             ft.Text("시작", color=MUTED, width=40),
@@ -702,11 +703,17 @@ class GuitarTAApp:
     def _open_delete_note(self, event: ft.ControlEvent) -> None:
         if not self.selected_note:
             return
+        self.delete_dialog = self._delete_note_dialog()
         self.page.open(self.delete_dialog)
+
+    def _close_delete_note(self, event: ft.ControlEvent) -> None:
+        self.delete_dialog.open = False
+        self.page.close(self.delete_dialog)
+        self.page.update()
 
     def _delete_selected_note(self, event: ft.ControlEvent) -> None:
         if not self.selected_note:
-            self.page.close(self.delete_dialog)
+            self._close_delete_note(event)
             return
         self.loop_active = False
         self._cancel_loop_timer()
@@ -715,6 +722,7 @@ class GuitarTAApp:
         self.selected_marker = None
         self.markers = []
         self.notes = self.repo.notes(self.selected_category_id)
+        self.delete_dialog.open = False
         self.page.close(self.delete_dialog)
         self._render_sidebar()
         self._render_detail()
