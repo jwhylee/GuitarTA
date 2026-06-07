@@ -140,7 +140,7 @@ class GuitarTAApp:
                     ft.Row(
                         [
                             ft.Text("GuitarTA", size=28, color=SIDEBAR_TEXT, weight=ft.FontWeight.BOLD),
-                            ft.Text("v1.20", color=SIDEBAR_MUTED, size=12, expand=True),
+                            ft.Text("v1.21", color=SIDEBAR_MUTED, size=12, expand=True),
                             ft.IconButton(
                                 icon=ft.Icons.CHEVRON_LEFT_ROUNDED,
                                 icon_color=SIDEBAR_TEXT,
@@ -1187,17 +1187,24 @@ class GuitarTAApp:
             cursor_color=ACCENT,
         )
 
-    def _category_add_button(self) -> ft.ElevatedButton:
-        return ft.ElevatedButton(
-            text="추가",
-            icon=ft.Icons.ADD_ROUNDED,
-            on_click=self._add_category,
+    def _category_add_button(self) -> ft.Container:
+        return ft.Container(
+            width=86,
             height=48,
-            style=ft.ButtonStyle(
-                bgcolor=ACCENT,
-                color=BG,
-                shape=ft.RoundedRectangleBorder(radius=6),
-                padding=ft.padding.symmetric(horizontal=14, vertical=0),
+            bgcolor=ACCENT,
+            border_radius=6,
+            alignment=ft.alignment.center,
+            padding=ft.padding.symmetric(horizontal=12, vertical=0),
+            on_click=self._add_category,
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.ADD_ROUNDED, color=BG, size=18),
+                    ft.Text("추가", color=BG, size=14, weight=ft.FontWeight.BOLD),
+                ],
+                spacing=6,
+                tight=True,
+                alignment=ft.MainAxisAlignment.CENTER,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
         )
 
