@@ -241,7 +241,7 @@ class GuitarTAApp:
                 ft.Column(
                     [
                         ft.Text("GuitarTA", color=BEIGE, size=26, weight=ft.FontWeight.BOLD),
-                        ft.Text("v1.17  기타/베이스 연습 노트", color=MUTED, size=12),
+                        ft.Text("v1.18  기타/베이스 연습 노트", color=MUTED, size=12),
                     ],
                     spacing=2,
                     expand=True,
@@ -305,7 +305,7 @@ class GuitarTAApp:
                                 expand=1,
                                 height=560,
                             ),
-                            ft.Container(content=self._practice_panel(), width=390),
+                            ft.Container(content=self._practice_panel(), width=390, height=560),
                         ],
                         spacing=18,
                         vertical_alignment=ft.CrossAxisAlignment.START,
@@ -391,44 +391,20 @@ class GuitarTAApp:
         return ft.AlertDialog(
             modal=True,
             bgcolor=PANEL,
-            title=ft.Text("카테고리 관리", color=BEIGE, size=20, weight=ft.FontWeight.BOLD),
-            content=ft.Container(
-                width=360,
-                content=ft.Column(
-                    [
-                        ft.Text("카테고리 추가", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
-                        self.add_category_input,
-                        ft.Divider(color=LINE),
-                        ft.Text("카테고리 삭제", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
-                        ft.Container(
-                            height=140,
-                            content=ft.Column(
-                                [
-                                    ft.Row(
-                                        [
-                                            ft.Text(category.name, color=TEXT, expand=True),
-                                            ft.IconButton(
-                                                icon=ft.Icons.DELETE_OUTLINE_ROUNDED,
-                                                icon_color=DANGER,
-                                                tooltip="카테고리 삭제",
-                                                on_click=lambda e, c=category: self._delete_category(c),
-                                            ),
-                                        ],
-                                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                                    )
-                                    for category in self._deletable_categories()
-                                ],
-                                spacing=2,
-                                scroll=ft.ScrollMode.AUTO,
-                            ),
-                        ),
-                    ],
-                    tight=True,
-                    spacing=8,
-                ),
+            title=ft.Row(
+                [
+                    ft.Text("카테고리 관리", color=BEIGE, size=20, weight=ft.FontWeight.BOLD, expand=True),
+                    ft.IconButton(
+                        icon=ft.Icons.CLOSE_ROUNDED,
+                        icon_color=BEIGE,
+                        tooltip="닫기",
+                        on_click=self._close_category_dialog,
+                    ),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
+            content=self._category_dialog_content(),
             actions=[
-                ft.TextButton("취소", on_click=lambda e: self.page.close(self.category_dialog)),
                 ft.ElevatedButton(
                     text="추가",
                     icon=ft.Icons.ADD_ROUNDED,
@@ -441,6 +417,44 @@ class GuitarTAApp:
                 ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+    def _category_dialog_content(self) -> ft.Container:
+        self.add_category_input = self._bare_text_field(width=320)
+        return ft.Container(
+            width=360,
+            content=ft.Column(
+                [
+                    ft.Text("카테고리 추가", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
+                    self.add_category_input,
+                    ft.Divider(color=LINE),
+                    ft.Text("카테고리 삭제", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
+                    ft.Container(
+                        height=140,
+                        content=ft.Column(
+                            [
+                                ft.Row(
+                                    [
+                                        ft.Text(category.name, color=TEXT, expand=True),
+                                        ft.IconButton(
+                                            icon=ft.Icons.DELETE_OUTLINE_ROUNDED,
+                                            icon_color=DANGER,
+                                            tooltip="카테고리 삭제",
+                                            on_click=lambda e, c=category: self._delete_category(c),
+                                        ),
+                                    ],
+                                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                                )
+                                for category in self._deletable_categories()
+                            ],
+                            spacing=2,
+                            scroll=ft.ScrollMode.AUTO,
+                        ),
+                    ),
+                ],
+                tight=True,
+                spacing=8,
+            ),
         )
 
     def _delete_note_dialog(self) -> ft.AlertDialog:
@@ -497,11 +511,12 @@ class GuitarTAApp:
 
     def _practice_panel(self) -> ft.Control:
         return ft.Container(
+            height=560,
             border=ft.border.only(left=ft.BorderSide(1, LINE)),
             padding=ft.padding.only(left=18),
             content=ft.Column(
                 [
-                    ft.Text("배속", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
+                    ft.Text("배속", color=BEIGE, size=16, weight=ft.FontWeight.BOLD),
                     ft.Row(
                         [
                             ft.Container(self.rate_slider, expand=True),
@@ -552,7 +567,7 @@ class GuitarTAApp:
                     ft.Divider(color=LINE),
                     ft.Container(self.marker_list, height=160),
                 ],
-                spacing=10,
+                spacing=8,
             ),
         )
 
@@ -672,8 +687,7 @@ class GuitarTAApp:
         self.categories = self.repo.categories()
         self._render_sidebar()
         self._render_note_category_dropdown()
-        self.add_category_input.value = ""
-        self.page.close(self.category_dialog)
+        self._refresh_category_dialog()
         self.page.update()
 
     def _delete_category(self, category: Category) -> None:
@@ -686,6 +700,14 @@ class GuitarTAApp:
         self.notes = self.repo.notes(self.selected_category_id)
         self._render_sidebar()
         self._render_note_category_dropdown()
+        self._refresh_category_dialog()
+        self.page.update()
+
+    def _refresh_category_dialog(self) -> None:
+        if self.category_dialog:
+            self.category_dialog.content = self._category_dialog_content()
+
+    def _close_category_dialog(self, event: ft.ControlEvent) -> None:
         self.category_dialog.open = False
         self.page.close(self.category_dialog)
         self.page.update()
