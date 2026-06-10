@@ -32,6 +32,12 @@ class Repository:
                     title TEXT NOT NULL,
                     source_url TEXT NOT NULL,
                     media_path TEXT NOT NULL,
+                    original_audio_path TEXT NOT NULL DEFAULT '',
+                    bass_removed_audio_path TEXT NOT NULL DEFAULT '',
+                    guitar_removed_audio_path TEXT NOT NULL DEFAULT '',
+                    drums_only_audio_path TEXT NOT NULL DEFAULT '',
+                    selected_audio_kind TEXT NOT NULL DEFAULT 'original',
+                    audio_pitch_semitones INTEGER NOT NULL DEFAULT 0,
                     category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
                     memo TEXT NOT NULL DEFAULT '',
                     playback_rate REAL NOT NULL DEFAULT 1.0,
@@ -60,6 +66,21 @@ class Repository:
                 conn.execute(
                     "ALTER TABLE tempo_markers ADD COLUMN end_ms INTEGER NOT NULL DEFAULT 0"
                 )
+            note_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(notes)").fetchall()
+            }
+            note_migrations = {
+                "original_audio_path": "ALTER TABLE notes ADD COLUMN original_audio_path TEXT NOT NULL DEFAULT ''",
+                "bass_removed_audio_path": "ALTER TABLE notes ADD COLUMN bass_removed_audio_path TEXT NOT NULL DEFAULT ''",
+                "guitar_removed_audio_path": "ALTER TABLE notes ADD COLUMN guitar_removed_audio_path TEXT NOT NULL DEFAULT ''",
+                "drums_only_audio_path": "ALTER TABLE notes ADD COLUMN drums_only_audio_path TEXT NOT NULL DEFAULT ''",
+                "selected_audio_kind": "ALTER TABLE notes ADD COLUMN selected_audio_kind TEXT NOT NULL DEFAULT 'original'",
+                "audio_pitch_semitones": "ALTER TABLE notes ADD COLUMN audio_pitch_semitones INTEGER NOT NULL DEFAULT 0",
+            }
+            for column, statement in note_migrations.items():
+                if column not in note_columns:
+                    conn.execute(statement)
             conn.execute(
                 "INSERT OR IGNORE INTO categories(name) VALUES (?)",
                 ("미분류",),
@@ -112,14 +133,31 @@ class Repository:
         source_url: str,
         media_path: str,
         category_id: Optional[int],
+        original_audio_path: str = "",
+        bass_removed_audio_path: str = "",
+        guitar_removed_audio_path: str = "",
+        drums_only_audio_path: str = "",
     ) -> Note:
         with self._connect() as conn:
             cur = conn.execute(
                 """
-                INSERT INTO notes(title, source_url, media_path, category_id)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO notes(
+                    title, source_url, media_path, original_audio_path,
+                    bass_removed_audio_path, guitar_removed_audio_path,
+                    drums_only_audio_path, category_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (title.strip() or "새 연습 노트", source_url, media_path, category_id),
+                (
+                    title.strip() or "새 연습 노트",
+                    source_url,
+                    media_path,
+                    original_audio_path,
+                    bass_removed_audio_path,
+                    guitar_removed_audio_path,
+                    drums_only_audio_path,
+                    category_id,
+                ),
             )
             note_id = int(cur.lastrowid)
         note = self.note(note_id)
@@ -156,10 +194,64 @@ class Repository:
             conn.execute(
                 """
                 UPDATE notes
-                SET source_url = ?, media_path = ?, updated_at = CURRENT_TIMESTAMP
+                    SET source_url = ?, media_path = ?, original_audio_path = '',
+                        bass_removed_audio_path = '', guitar_removed_audio_path = '',
+                        drums_only_audio_path = '',
+                    selected_audio_kind = 'original', audio_pitch_semitones = 0,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
                 """,
                 (source_url, media_path, note_id),
+            )
+
+    def update_note_audio_assets(
+        self,
+        note_id: int,
+        original_audio_path: str,
+        bass_removed_audio_path: str,
+        guitar_removed_audio_path: str,
+        drums_only_audio_path: str = "",
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE notes
+                SET original_audio_path = ?, bass_removed_audio_path = ?,
+                    guitar_removed_audio_path = ?, drums_only_audio_path = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (
+                    original_audio_path,
+                    bass_removed_audio_path,
+                    guitar_removed_audio_path,
+                    drums_only_audio_path,
+                    note_id,
+                ),
+            )
+
+    def update_note_audio_kind(self, note_id: int, selected_audio_kind: str) -> None:
+        clean_kind = selected_audio_kind if selected_audio_kind in {"original", "bass_removed", "guitar_removed", "drums_only"} else "original"
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE notes
+                SET selected_audio_kind = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (clean_kind, note_id),
+            )
+
+    def update_note_audio_pitch(self, note_id: int, audio_pitch_semitones: int) -> None:
+        clean_pitch = max(-9, min(9, int(audio_pitch_semitones)))
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE notes
+                SET audio_pitch_semitones = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (clean_pitch, note_id),
             )
 
     def delete_note(self, note_id: int) -> None:
@@ -221,6 +313,12 @@ class Repository:
             title=row["title"],
             source_url=row["source_url"],
             media_path=row["media_path"],
+            original_audio_path=row["original_audio_path"],
+            bass_removed_audio_path=row["bass_removed_audio_path"],
+            guitar_removed_audio_path=row["guitar_removed_audio_path"],
+            drums_only_audio_path=row["drums_only_audio_path"],
+            selected_audio_kind=row["selected_audio_kind"],
+            audio_pitch_semitones=int(row["audio_pitch_semitones"]),
             category_id=row["category_id"],
             memo=row["memo"],
             playback_rate=float(row["playback_rate"]),

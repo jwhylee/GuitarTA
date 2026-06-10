@@ -15,6 +15,12 @@ class Note:
     title: str
     source_url: str
     media_path: str
+    original_audio_path: str
+    bass_removed_audio_path: str
+    guitar_removed_audio_path: str
+    drums_only_audio_path: str
+    selected_audio_kind: str
+    audio_pitch_semitones: int
     category_id: Optional[int]
     memo: str
     playback_rate: float

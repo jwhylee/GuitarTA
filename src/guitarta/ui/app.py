@@ -1,4 +1,7 @@
+import inspect
+import asyncio
 import threading
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -6,9 +9,52 @@ import flet as ft
 import flet_video as fvideo
 
 from guitarta.models import Category, Note, TempoMarker
-from guitarta.paths import database_path, media_dir
+from guitarta.paths import audio_dir, database_path, media_dir
+from guitarta.services.audio_processor import AudioProcessingError, AudioProcessor
 from guitarta.services.downloader import DownloadError, YouTubeDownloader
 from guitarta.services.repository import Repository
+
+
+def _install_flet_compat() -> None:
+    if not hasattr(ft.padding, "all"):
+        ft.padding.all = lambda value: ft.Padding(value, value, value, value)
+    if not hasattr(ft.padding, "symmetric"):
+        ft.padding.symmetric = lambda horizontal=0, vertical=0: ft.Padding(
+            horizontal,
+            vertical,
+            horizontal,
+            vertical,
+        )
+    if not hasattr(ft.padding, "only"):
+        ft.padding.only = lambda left=0, top=0, right=0, bottom=0: ft.Padding(
+            left,
+            top,
+            right,
+            bottom,
+        )
+    if not hasattr(ft.border, "all"):
+        ft.border.all = lambda width=1, color=None: ft.Border(
+            top=ft.BorderSide(width, color),
+            right=ft.BorderSide(width, color),
+            bottom=ft.BorderSide(width, color),
+            left=ft.BorderSide(width, color),
+        )
+    if not hasattr(ft.border, "only"):
+        ft.border.only = lambda left=None, top=None, right=None, bottom=None: ft.Border(
+            left=left or ft.BorderSide(0, ft.Colors.BLACK),
+            top=top or ft.BorderSide(0, ft.Colors.BLACK),
+            right=right or ft.BorderSide(0, ft.Colors.BLACK),
+            bottom=bottom or ft.BorderSide(0, ft.Colors.BLACK),
+        )
+    if not hasattr(ft.alignment, "center"):
+        ft.alignment.center = ft.Alignment(0, 0)
+    if not hasattr(ft.alignment, "center_left"):
+        ft.alignment.center_left = ft.Alignment(-1, 0)
+    if not hasattr(ft.alignment, "center_right"):
+        ft.alignment.center_right = ft.Alignment(1, 0)
+
+
+_install_flet_compat()
 
 
 BG = "#0F0E0C"
@@ -26,6 +72,23 @@ LINE = "#473E31"
 ACCENT = "#F0C982"
 DANGER = "#D96855"
 CATEGORY_ADD_CONTROL_HEIGHT = 40
+VIDEO_PANEL_HEIGHT = 500
+NOTE_BOTTOM_HEIGHT = 190
+MEMO_INPUT_HEIGHT = NOTE_BOTTOM_HEIGHT - 30
+MARKER_LABEL_WIDTH = 44
+MARKER_FIELD_PAD_V = 10
+MARKER_TIME_FIELD_WIDTH = 112
+MARKER_ACTION_BUTTON_WIDTH = 100
+MARKER_ACTION_BUTTON_HEIGHT = 33
+FULLSCREEN_RESTORE_RECHECK_SECONDS = (0.03, 0.1, 0.25)
+DROPDOWN_OPTION_HEIGHT = 48
+DROPDOWN_MENU_MAX_HEIGHT = 260
+AUDIO_KIND_LABELS = {
+    "original": "원본",
+    "bass_removed": "베이스 제거",
+    "guitar_removed": "기타 제거",
+    "drums_only": "드럼 단독",
+}
 
 
 class GuitarTAApp:
@@ -33,6 +96,7 @@ class GuitarTAApp:
         self.page = page
         self.repo = Repository(database_path())
         self.downloader = YouTubeDownloader(media_dir())
+        self.audio_processor = AudioProcessor(audio_dir())
         self.selected_category_id: Optional[int] = None
         self.selected_note: Optional[Note] = None
         self.selected_marker: Optional[TempoMarker] = None
@@ -41,8 +105,17 @@ class GuitarTAApp:
         self.sidebar_open = True
         self.loop_timer: Optional[threading.Timer] = None
         self.loop_active = False
+        self.loop_last_restart_at = 0.0
         self.restore_app_fullscreen = False
+        self.video_fullscreen_active = False
+        self.video_focus_mode = False
         self.dialog_category_name = "기타"
+        self.audio_assets_preparing = set()
+        self.video_volume = 100
+        self.audio_pitch_semitones = 0
+        self.video_playing = False
+        self.dialog_open = False
+        self.text_entry_active = False
 
         self.categories: List[Category] = []
         self.notes: List[Note] = []
@@ -56,6 +129,8 @@ class GuitarTAApp:
         self.page.bgcolor = BG
         self.page.padding = 0
         self.page.on_keyboard_event = self._handle_keyboard_event
+        if getattr(self.page, "window", None) is not None:
+            self.page.window.on_event = self._handle_window_event
 
         self.new_title_input = self._text_field("새 노트 제목", width=250)
         self.url_input = self._text_field("유튜브 링크", expand=True)
@@ -86,12 +161,39 @@ class GuitarTAApp:
             label="연습 메모",
             multiline=True,
             min_lines=5,
-            max_lines=8,
+            max_lines=5,
+            expand=True,
+            height=MEMO_INPUT_HEIGHT,
             border_color=LINE,
             focused_border_color=ACCENT,
             bgcolor=PANEL_2,
             color=TEXT,
             label_style=ft.TextStyle(color=MUTED),
+            on_focus=lambda event: self._set_text_entry_active(True),
+            on_blur=lambda event: self._set_text_entry_active(False),
+        )
+        self.audio_status = ft.Text("", color=MUTED, size=12)
+        self.audio_kind_dropdown = self._audio_kind_dropdown()
+        self.volume_text = ft.Text("100%", color=BEIGE, size=13, weight=ft.FontWeight.BOLD)
+        self.volume_slider = ft.Slider(
+            min=0,
+            max=100,
+            divisions=20,
+            value=self.video_volume,
+            active_color=ACCENT,
+            inactive_color=LINE,
+            on_change=self._change_volume,
+        )
+        self.pitch_text = ft.Text("0키", color=BEIGE, size=13, weight=ft.FontWeight.BOLD)
+        self.pitch_slider = ft.Slider(
+            min=-9,
+            max=9,
+            divisions=18,
+            value=self.audio_pitch_semitones,
+            active_color=ACCENT,
+            inactive_color=LINE,
+            on_change=self._preview_pitch,
+            on_change_end=self._change_pitch,
         )
         self.note_settings_button = self._button("노트 설정", ft.Icons.TUNE_ROUNDED, self._open_note_settings)
         self.save_note_button = self._button("저장", ft.Icons.SAVE_OUTLINED, self._save_note)
@@ -109,28 +211,30 @@ class GuitarTAApp:
             on_change=self._change_rate,
         )
 
-        self.marker_name_input = self._marker_name_field()
-        self.marker_start_input = self._text_field("시작", width=145, value="00:00:00")
-        self.marker_end_input = self._text_field("종료", width=145, value="00:00:00")
+        self.marker_name_input = self._marker_text_field("구간 제목")
+        self.marker_start_input = self._marker_time_field("시작 시간")
+        self.marker_end_input = self._marker_time_field("종료 시간")
         self.marker_list = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
         self.loop_status = ft.Text("반복 대기", color=MUTED, size=12)
 
         self.sidebar_host = ft.Container(content=self._sidebar(), width=360)
         self.sidebar_divider = ft.VerticalDivider(width=1, color=LINE)
         self.sidebar_rail = ft.Container(content=self._sidebar_rail(), width=54, visible=False)
+        self.main_area_host = self._main_area()
         self.page.add(
             ft.Row(
                 [
                     self.sidebar_host,
                     self.sidebar_divider,
                     self.sidebar_rail,
-                    self._main_area(),
+                    self.main_area_host,
                 ],
                 expand=True,
                 spacing=0,
             )
         )
         self._refresh_all()
+        self._prepare_missing_audio_assets()
 
     def _sidebar(self) -> ft.Container:
         return ft.Container(
@@ -141,7 +245,7 @@ class GuitarTAApp:
                     ft.Row(
                         [
                             ft.Text("GuitarTA", size=28, color=SIDEBAR_TEXT, weight=ft.FontWeight.BOLD),
-                            ft.Text("v1.22", color=SIDEBAR_MUTED, size=12, expand=True),
+                            ft.Text("v2.0", color=SIDEBAR_MUTED, size=12, expand=True),
                             ft.IconButton(
                                 icon=ft.Icons.CHEVRON_LEFT_ROUNDED,
                                 icon_color=SIDEBAR_TEXT,
@@ -154,7 +258,7 @@ class GuitarTAApp:
                     ft.Row(
                         [
                             ft.ElevatedButton(
-                                text="새로운 노트 생성",
+                                "새로운 노트 생성",
                                 icon=ft.Icons.ADD_ROUNDED,
                                 on_click=self._open_new_note,
                                 expand=True,
@@ -240,10 +344,14 @@ class GuitarTAApp:
                 expand=True,
             )
 
+        if self.video_focus_mode:
+            return self._video_focus_detail()
+
         self.title_input.value = self.selected_note.title
         self.memo_input.value = self.selected_note.memo
         self.rate_slider.value = self.selected_note.playback_rate
         self.rate_text.value = f"{self.selected_note.playback_rate:.2f}x"
+        self._render_audio_selector()
 
         return ft.Container(
             padding=ft.padding.only(right=20),
@@ -268,7 +376,11 @@ class GuitarTAApp:
                                 expand=True,
                             ),
                             ft.Row(
-                                [self.note_settings_button, self.save_note_button, self.delete_note_button],
+                                [
+                                    self.note_settings_button,
+                                    self.save_note_button,
+                                    self.delete_note_button,
+                                ],
                                 spacing=10,
                             ),
                         ],
@@ -284,25 +396,69 @@ class GuitarTAApp:
                                 border_radius=8,
                                 padding=ft.padding.all(8),
                                 expand=1,
-                                height=560,
+                                height=VIDEO_PANEL_HEIGHT,
                             ),
-                            ft.Container(content=self._practice_panel(), width=390, height=560),
+                            ft.Container(content=self._practice_panel(), width=390, height=VIDEO_PANEL_HEIGHT),
                         ],
                         spacing=18,
                         vertical_alignment=ft.CrossAxisAlignment.START,
                     ),
                     ft.Divider(color=LINE),
-                    ft.Column(
-                        [
-                            ft.Text("노트 메모", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
-                            self.memo_input,
-                        ],
-                        spacing=10,
+                    ft.Container(
+                        height=NOTE_BOTTOM_HEIGHT,
+                        content=ft.Row(
+                            [
+                                self._audio_selection_panel(),
+                                ft.Container(width=1, height=NOTE_BOTTOM_HEIGHT, bgcolor=LINE),
+                                ft.Column(
+                                    [
+                                        ft.Text("노트 메모", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
+                                        self.memo_input,
+                                    ],
+                                    spacing=8,
+                                    expand=True,
+                                    horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                                ),
+                            ],
+                            spacing=16,
+                            vertical_alignment=ft.CrossAxisAlignment.START,
+                        ),
                     ),
                 ],
                 expand=True,
-                scroll=ft.ScrollMode.AUTO,
                 spacing=14,
+            ),
+        )
+
+    def _video_focus_detail(self) -> ft.Control:
+        return ft.Container(
+            expand=True,
+            bgcolor="#050505",
+            padding=ft.padding.all(10),
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text(
+                                self.selected_note.title if self.selected_note else "영상 확대",
+                                color=BEIGE,
+                                size=16,
+                                weight=ft.FontWeight.BOLD,
+                                expand=True,
+                                max_lines=1,
+                                overflow=ft.TextOverflow.ELLIPSIS,
+                            ),
+                        ],
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Container(
+                        content=self.video,
+                        bgcolor="#050505",
+                        expand=True,
+                    ),
+                ],
+                expand=True,
+                spacing=8,
             ),
         )
 
@@ -355,7 +511,7 @@ class GuitarTAApp:
             actions=[
                 ft.TextButton("취소", on_click=self._close_note_settings),
                 ft.ElevatedButton(
-                    text="저장",
+                    "저장",
                     icon=ft.Icons.DOWNLOAD_ROUNDED,
                     on_click=self._download_note,
                     style=ft.ButtonStyle(
@@ -442,7 +598,7 @@ class GuitarTAApp:
             actions=[
                 ft.TextButton("취소", on_click=self._close_delete_note),
                 ft.ElevatedButton(
-                    text="삭제",
+                    "삭제",
                     icon=ft.Icons.DELETE_OUTLINE_ROUNDED,
                     on_click=self._delete_selected_note,
                     style=ft.ButtonStyle(
@@ -465,7 +621,7 @@ class GuitarTAApp:
         self.url_input.value = ""
         self.url_input.label = "유튜브 링크"
         self.download_status.value = ""
-        self.page.open(self.note_dialog)
+        self._open_dialog(self.note_dialog)
 
     def _open_note_settings(self, event: ft.ControlEvent) -> None:
         if not self.selected_note:
@@ -480,14 +636,14 @@ class GuitarTAApp:
         self.url_input.value = ""
         self.url_input.label = "새 유튜브 링크"
         self.download_status.value = "링크를 입력하면 현재 노트의 영상만 교체됩니다."
-        self.page.open(self.note_dialog)
+        self._open_dialog(self.note_dialog)
 
     def _close_note_settings(self, event: ft.ControlEvent) -> None:
-        self.page.close(self.note_dialog)
+        self._close_dialog(self.note_dialog)
 
     def _practice_panel(self) -> ft.Control:
         return ft.Container(
-            height=560,
+            height=VIDEO_PANEL_HEIGHT,
             border=ft.border.only(left=ft.BorderSide(1, LINE)),
             padding=ft.padding.only(left=18),
             content=ft.Column(
@@ -509,26 +665,28 @@ class GuitarTAApp:
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    ft.Container(height=2),
-                    self.marker_name_input,
-                    ft.Container(height=4),
                     ft.Row(
-                        [
-                            ft.Text("시작", color=MUTED, width=40),
-                            self.marker_start_input,
-                            self._compact_button("현재 위치", ft.Icons.MY_LOCATION_ROUNDED, self._capture_position, expand=True),
-                        ],
-                        spacing=8,
+                        [self.marker_name_input],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    ft.Row(
-                        [
-                            ft.Text("종료", color=MUTED, width=40),
+                    ft.Container(height=4),
+                    self._marker_field_row(
+                        "시작",
+                        self.marker_start_input,
+                        self._marker_time_controls(
+                            self.marker_start_input,
+                            ft.Icons.MY_LOCATION_ROUNDED,
+                            self._capture_position,
+                        ),
+                    ),
+                    self._marker_field_row(
+                        "종료",
+                        self.marker_end_input,
+                        self._marker_time_controls(
                             self.marker_end_input,
-                            self._compact_button("현재 위치", ft.Icons.FLAG_ROUNDED, self._capture_end_position, expand=True),
-                        ],
-                        spacing=8,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ft.Icons.FLAG_ROUNDED,
+                            self._capture_end_position,
+                        ),
                     ),
                     ft.Divider(color=LINE),
                     ft.Text("반복구간 조작", color=MUTED, size=12, weight=ft.FontWeight.BOLD),
@@ -547,6 +705,36 @@ class GuitarTAApp:
             ),
         )
 
+    def _audio_selection_panel(self) -> ft.Control:
+        return ft.Container(
+            width=250,
+            content=ft.Column(
+                [
+                    ft.Text("음원 선택", color=BEIGE, size=18, weight=ft.FontWeight.BOLD),
+                    self.audio_kind_dropdown,
+                    ft.Row(
+                        [
+                            ft.Text("볼륨", color=MUTED, size=12, width=38),
+                            ft.Container(self.volume_slider, expand=True),
+                            self.volume_text,
+                        ],
+                        spacing=6,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Row(
+                        [
+                            ft.Text("피치", color=MUTED, size=12, width=38),
+                            ft.Container(self.pitch_slider, expand=True),
+                            self.pitch_text,
+                        ],
+                        spacing=6,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                ],
+                spacing=6,
+            ),
+        )
+
     def _refresh_all(self) -> None:
         self.categories = self.repo.categories()
         self.notes = self.repo.notes(self.selected_category_id)
@@ -559,7 +747,10 @@ class GuitarTAApp:
         self.page.update()
 
     def _render_sidebar(self) -> None:
-        self.category_dropdown.options = self._category_options(include_all=True, sidebar=True)
+        self._apply_dropdown_options(
+            self.category_dropdown,
+            self._category_options(include_all=True, sidebar=True),
+        )
         self.category_dropdown.value = (
             str(self.selected_category_id) if self.selected_category_id is not None else "all"
         )
@@ -569,7 +760,10 @@ class GuitarTAApp:
         ]
 
     def _render_note_category_dropdown(self) -> None:
-        self.note_category_dropdown.options = self._category_options(include_all=False, sidebar=False)
+        self._apply_dropdown_options(
+            self.note_category_dropdown,
+            self._category_options(include_all=False, sidebar=False),
+        )
 
     def _select_note_dialog_category(self, event: ft.ControlEvent) -> None:
         key = self.note_category_dropdown.value
@@ -577,6 +771,8 @@ class GuitarTAApp:
         self.dialog_category_name = category.name if category else "기타"
 
     def _render_detail(self) -> None:
+        if not self.selected_note and self.video_focus_mode:
+            self._set_video_focus_mode(False, update=False)
         if self.selected_note:
             self._load_video(self.selected_note)
             self._render_markers()
@@ -616,10 +812,54 @@ class GuitarTAApp:
                 )
             )
 
+    def _render_audio_selector(self) -> None:
+        if not self.selected_note:
+            return
+        selected = self._selected_audio_kind(self.selected_note)
+        pitch = self._audio_pitch(self.selected_note)
+        self.audio_pitch_semitones = pitch
+        self.pitch_slider.value = pitch
+        self.pitch_text.value = self._pitch_label(pitch)
+        self._apply_dropdown_options(
+            self.audio_kind_dropdown,
+            self._audio_kind_options(self.selected_note),
+        )
+        self.audio_kind_dropdown.value = selected
+        if self.selected_note.id in self.audio_assets_preparing:
+            self.audio_status.value = "제거 음원 생성 중..."
+        elif self._all_audio_assets_ready(self.selected_note):
+            self.audio_status.value = ""
+        else:
+            self.audio_status.value = ""
+
+    def _select_audio_from_dropdown(self, event: ft.ControlEvent) -> None:
+        if not self.selected_note:
+            return
+        audio_kind = self.audio_kind_dropdown.value or "original"
+        self._select_audio_kind(audio_kind)
+
+    def _select_audio_kind(self, audio_kind: str) -> None:
+        if not self.selected_note:
+            return
+        current_kind = self._selected_audio_kind(self.selected_note)
+        if audio_kind != "original" and not self._audio_asset_ready(self.selected_note, audio_kind):
+            self._start_note_audio_preparation(self.selected_note)
+            self.audio_kind_dropdown.value = current_kind
+            self._render_audio_selector()
+            self.page.update()
+            return
+        self.repo.update_note_audio_kind(self.selected_note.id, audio_kind)
+        self.selected_note = self.repo.note(self.selected_note.id)
+        if self.selected_note:
+            self._load_video(self.selected_note)
+            self._render_audio_selector()
+            self.detail_area.content = self._note_detail()
+        self.page.update()
+
     def _note_tile(self, note: Note, selected: bool) -> ft.Control:
         return ft.Container(
             bgcolor="#FFF2D7" if selected else SIDEBAR_BG,
-            border=ft.border.only(bottom=ft.BorderSide(1, "#D0B98A")),
+            border_radius=6 if selected else 0,
             padding=ft.padding.symmetric(horizontal=8, vertical=9),
             on_click=lambda e, n=note: self._select_note(n),
             content=ft.Row(
@@ -653,7 +893,7 @@ class GuitarTAApp:
     def _open_category_dialog(self, event: ft.ControlEvent) -> None:
         self.add_category_input.value = ""
         self.category_dialog = self._category_dialog()
-        self.page.open(self.category_dialog)
+        self._open_dialog(self.category_dialog)
 
     def _add_category(self, event: ft.ControlEvent) -> None:
         name = (self.add_category_input.value or "").strip()
@@ -684,13 +924,28 @@ class GuitarTAApp:
             self.category_dialog.content = self._category_dialog_content()
 
     def _close_category_dialog(self, event: ft.ControlEvent) -> None:
-        self.category_dialog.open = False
-        self.page.close(self.category_dialog)
+        self._close_dialog(self.category_dialog)
         self.page.update()
 
     def _handle_keyboard_event(self, event: ft.KeyboardEvent) -> None:
-        if event.key.lower() == "s" and (event.meta or event.ctrl):
+        key = str(getattr(event, "key", "") or "").lower()
+        meta = bool(getattr(event, "meta", False))
+        ctrl = bool(getattr(event, "ctrl", False))
+        alt = bool(getattr(event, "alt", False))
+        if self.video_focus_mode and key in {"escape", "esc"}:
+            self._set_video_focus_mode(False)
+            return
+        if key == "s" and (meta or ctrl):
             self._save_note_from_shortcut()
+            return
+        if (
+            self.selected_note
+            and self._is_space_key(event)
+            and not (meta or ctrl or alt)
+            and not self.dialog_open
+            and not self.text_entry_active
+        ):
+            self._toggle_video_playback()
 
     def _save_note_from_shortcut(self) -> None:
         if not self.selected_note:
@@ -701,11 +956,10 @@ class GuitarTAApp:
         if not self.selected_note:
             return
         self.delete_dialog = self._delete_note_dialog()
-        self.page.open(self.delete_dialog)
+        self._open_dialog(self.delete_dialog)
 
     def _close_delete_note(self, event: ft.ControlEvent) -> None:
-        self.delete_dialog.open = False
-        self.page.close(self.delete_dialog)
+        self._close_dialog(self.delete_dialog)
         self.page.update()
 
     def _delete_selected_note(self, event: ft.ControlEvent) -> None:
@@ -719,17 +973,80 @@ class GuitarTAApp:
         self.selected_marker = None
         self.markers = []
         self.notes = self.repo.notes(self.selected_category_id)
-        self.delete_dialog.open = False
-        self.page.close(self.delete_dialog)
+        self._close_dialog(self.delete_dialog)
         self._render_sidebar()
         self._render_detail()
         self.page.update()
 
     def _toggle_sidebar(self, event: ft.ControlEvent) -> None:
+        if self.video_focus_mode:
+            return
         self.sidebar_open = not self.sidebar_open
         self.sidebar_host.visible = self.sidebar_open
         self.sidebar_divider.visible = self.sidebar_open
         self.sidebar_rail.visible = not self.sidebar_open
+        self.page.update()
+
+    def _toggle_video_focus(self, event: ft.ControlEvent) -> None:
+        self._set_video_focus_mode(not self.video_focus_mode)
+
+    def _set_video_focus_mode(self, enabled: bool, update: bool = True) -> None:
+        if enabled and not self.selected_note:
+            return
+        restore_position_ms = self._video_position_ms()
+        restore_playing = self.video_playing or self.loop_active
+        self.video_focus_mode = enabled
+        if hasattr(self.video, "controls"):
+            self.video.controls = self._video_controls(expanded=enabled)
+        self.sidebar_host.visible = False if enabled else self.sidebar_open
+        self.sidebar_divider.visible = False if enabled else self.sidebar_open
+        self.sidebar_rail.visible = False if enabled else not self.sidebar_open
+        self.main_area_host.padding = ft.padding.all(0 if enabled else 20)
+        self.detail_area.content = self._note_detail()
+        if update:
+            self.page.update()
+            self._restore_video_after_focus_change(restore_position_ms, restore_playing)
+
+    def _restore_video_after_focus_change(self, position_ms: int, should_play: bool) -> None:
+        fixed_position_ms = max(0, int(position_ms))
+        self.current_position_ms = fixed_position_ms
+
+        def restore() -> None:
+            if should_play:
+                self._play_from_ms(fixed_position_ms)
+                if self.loop_active and self.selected_marker:
+                    self._schedule_loop_restart(self.selected_marker, fixed_position_ms)
+                return
+            self._seek_ms(fixed_position_ms)
+
+        restore()
+        for delay in (0.05, 0.18):
+            timer = threading.Timer(delay, restore)
+            timer.daemon = True
+            timer.start()
+
+    def _open_dialog(self, dialog: ft.AlertDialog) -> None:
+        self.dialog_open = True
+        self.text_entry_active = False
+        if hasattr(self.page, "open"):
+            self.page.open(dialog)
+            return
+        if hasattr(self.page, "show_dialog"):
+            self.page.show_dialog(dialog)
+            return
+        dialog.open = True
+        self.page.update()
+
+    def _close_dialog(self, dialog: ft.AlertDialog) -> None:
+        self.dialog_open = False
+        self.text_entry_active = False
+        dialog.open = False
+        if hasattr(self.page, "close"):
+            self.page.close(dialog)
+            return
+        if hasattr(self.page, "pop_dialog"):
+            self.page.pop_dialog()
+            return
         self.page.update()
 
     def _select_note(self, note: Note) -> None:
@@ -774,6 +1091,18 @@ class GuitarTAApp:
                             source_url=result["source_url"],
                             media_path=result["media_path"],
                         )
+                        assets = self.audio_processor.prepare_note_audio(
+                            self.selected_note.id,
+                            result["media_path"],
+                            self._set_download_status,
+                        )
+                        self.repo.update_note_audio_assets(
+                            self.selected_note.id,
+                            assets["original_audio_path"],
+                            assets["bass_removed_audio_path"],
+                            assets["guitar_removed_audio_path"],
+                            assets["drums_only_audio_path"],
+                        )
                     self.selected_note = self.repo.note(self.selected_note.id)
                     self.download_status.value = "노트 설정이 저장되었습니다."
                 else:
@@ -786,12 +1115,28 @@ class GuitarTAApp:
                     )
                     self.selected_note = note
                     self.selected_marker = None
+                    assets = self.audio_processor.prepare_note_audio(
+                        note.id,
+                        result["media_path"],
+                        self._set_download_status,
+                    )
+                    self.repo.update_note_audio_assets(
+                        note.id,
+                        assets["original_audio_path"],
+                        assets["bass_removed_audio_path"],
+                        assets["guitar_removed_audio_path"],
+                        assets["drums_only_audio_path"],
+                    )
+                    note = self.repo.note(note.id) or note
+                    self.selected_note = note
                     self.download_status.value = "노트가 추가되었습니다."
                 self.url_input.value = ""
                 self.new_title_input.value = ""
-                self.page.close(self.note_dialog)
+                self._close_dialog(self.note_dialog)
             except DownloadError as exc:
                 self.download_status.value = str(exc)
+            except AudioProcessingError as exc:
+                self.download_status.value = f"영상은 저장됐지만 제거 음원 생성에 실패했습니다: {exc}"
             finally:
                 self.is_downloading = False
                 self.categories = self.repo.categories()
@@ -806,6 +1151,107 @@ class GuitarTAApp:
     def _set_download_status(self, text: str) -> None:
         self.download_status.value = text
         self.page.update()
+
+    def _prepare_missing_audio_assets(self) -> None:
+        pending_notes = [
+            note for note in self.repo.notes()
+            if not self._all_audio_assets_ready(note)
+        ]
+        if not pending_notes:
+            return
+
+        def worker() -> None:
+            for note in pending_notes:
+                if note.id in self.audio_assets_preparing:
+                    continue
+                self._prepare_note_audio_assets_blocking(note)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _start_note_audio_preparation(self, note: Note) -> None:
+        if note.id in self.audio_assets_preparing:
+            return
+        self.audio_assets_preparing.add(note.id)
+        threading.Thread(
+            target=lambda: self._prepare_note_audio_assets_blocking(note, marked=True),
+            daemon=True,
+        ).start()
+
+    def _prepare_note_audio_assets_blocking(self, note: Note, marked: bool = False) -> None:
+        if not marked:
+            if note.id in self.audio_assets_preparing:
+                return
+            self.audio_assets_preparing.add(note.id)
+        try:
+            assets = self.audio_processor.prepare_note_audio(
+                note.id,
+                note.media_path,
+                lambda text: self._set_audio_status(note.id, text),
+            )
+            self.repo.update_note_audio_assets(
+                note.id,
+                assets["original_audio_path"],
+                assets["bass_removed_audio_path"],
+                assets["guitar_removed_audio_path"],
+                assets["drums_only_audio_path"],
+            )
+        except AudioProcessingError as exc:
+            self._set_audio_status(note.id, f"제거 음원 생성 실패: {exc}")
+        finally:
+            self.audio_assets_preparing.discard(note.id)
+            if self.selected_note and self.selected_note.id == note.id:
+                self.selected_note = self.repo.note(note.id)
+                if self.selected_note:
+                    self._render_audio_selector()
+                    self._load_video(self.selected_note)
+            self.notes = self.repo.notes(self.selected_category_id)
+            self._render_sidebar()
+            self.page.update()
+
+    def _set_audio_status(self, note_id: int, text: str) -> None:
+        if self.selected_note and self.selected_note.id == note_id:
+            self.audio_status.value = text
+            self.page.update()
+
+    def _window_is_fullscreen(self) -> bool:
+        window = getattr(self.page, "window", None)
+        for target, attr in ((window, "full_screen"), (self.page, "window_full_screen")):
+            if target is not None and hasattr(target, attr):
+                return bool(getattr(target, attr))
+        return False
+
+    def _set_window_fullscreen(self, value: bool) -> None:
+        window = getattr(self.page, "window", None)
+        for target, attr in ((window, "full_screen"), (self.page, "window_full_screen")):
+            if target is not None and hasattr(target, attr):
+                setattr(target, attr, value)
+                return
+
+    def _selected_audio_kind(self, note: Note) -> str:
+        if note.selected_audio_kind in {"original", "bass_removed", "guitar_removed", "drums_only"}:
+            return note.selected_audio_kind
+        return "original"
+
+    @staticmethod
+    def _audio_pitch(note: Note) -> int:
+        return max(-9, min(9, int(getattr(note, "audio_pitch_semitones", 0) or 0)))
+
+    def _audio_asset_ready(self, note: Note, audio_kind: str) -> bool:
+        if audio_kind == "original":
+            return bool(note.original_audio_path) and Path(note.original_audio_path).expanduser().exists()
+        if audio_kind == "bass_removed":
+            return bool(note.bass_removed_audio_path) and Path(note.bass_removed_audio_path).expanduser().exists()
+        if audio_kind == "guitar_removed":
+            return bool(note.guitar_removed_audio_path) and Path(note.guitar_removed_audio_path).expanduser().exists()
+        if audio_kind == "drums_only":
+            return bool(note.drums_only_audio_path) and Path(note.drums_only_audio_path).expanduser().exists()
+        return False
+
+    def _all_audio_assets_ready(self, note: Note) -> bool:
+        return all(
+            self._audio_asset_ready(note, audio_kind)
+            for audio_kind in ("original", "bass_removed", "guitar_removed", "drums_only")
+        )
 
     def _save_note(self, event: ft.ControlEvent) -> None:
         if not self.selected_note:
@@ -822,7 +1268,7 @@ class GuitarTAApp:
         self._refresh_all()
 
     def _load_video(self, note: Note) -> None:
-        path = Path(note.media_path).expanduser()
+        path = self._playback_media_for_note(note)
         if not path.exists():
             self.video = self._make_video()
             self.video_status.value = f"영상 파일을 찾을 수 없습니다: {path}"
@@ -831,21 +1277,78 @@ class GuitarTAApp:
         media = fvideo.VideoMedia(path.resolve().as_uri())
         self.video = self._make_video([media])
         self.video.playback_rate = note.playback_rate
+        self.video.volume = self.video_volume
         self.video_status.value = f"영상 준비 중: {path.name}"
 
+    def _playback_media_for_note(self, note: Note) -> Path:
+        selected_kind = self._selected_audio_kind(note)
+        pitch = self._audio_pitch(note)
+        if selected_kind == "original" and pitch == 0:
+            return Path(note.media_path).expanduser()
+
+        audio_path = self.audio_processor.audio_path_for_kind(note, selected_kind)
+        if selected_kind == "original" and not audio_path:
+            audio_path = note.media_path
+        if not audio_path or not Path(audio_path).expanduser().exists():
+            self._start_note_audio_preparation(note)
+            self.video_status.value = "선택한 음원이 아직 준비되지 않아 원본으로 재생합니다."
+            return Path(note.media_path).expanduser()
+
+        try:
+            return self.audio_processor.playback_media_path(
+                note.id,
+                note.media_path,
+                audio_path,
+                selected_kind,
+                pitch,
+            )
+        except AudioProcessingError as exc:
+            self.video_status.value = f"선택 음원 준비 실패: {exc}"
+            return Path(note.media_path).expanduser()
+
     def _make_video(self, playlist: Optional[List[fvideo.VideoMedia]] = None) -> fvideo.Video:
-        return fvideo.Video(
-            expand=True,
-            playlist=playlist or [],
-            aspect_ratio=16 / 9,
-            autoplay=False,
-            show_controls=True,
-            fill_color=BG,
-            volume=100,
-            on_loaded=self._on_video_loaded,
-            on_enter_fullscreen=self._on_video_enter_fullscreen,
-            on_exit_fullscreen=self._on_video_exit_fullscreen,
-            on_error=self._on_video_error,
+        params = inspect.signature(fvideo.Video).parameters
+        kwargs = {
+            "expand": True,
+            "playlist": playlist or [],
+            "aspect_ratio": 16 / 9,
+            "autoplay": False,
+            "controls": self._video_controls(expanded=self.video_focus_mode),
+            "fill_color": BG,
+            "volume": self.video_volume,
+            "on_enter_fullscreen": self._on_video_enter_fullscreen,
+            "on_exit_fullscreen": self._on_video_exit_fullscreen,
+            "on_error": self._on_video_error,
+            "on_position_change": self._on_video_position_change,
+        }
+        kwargs["on_load" if "on_load" in params else "on_loaded"] = self._on_video_loaded
+        return fvideo.Video(**{key: value for key, value in kwargs.items() if key in params})
+
+    def _video_controls(self, expanded: bool = False) -> fvideo.AdaptiveVideoControls:
+        desktop_controls = fvideo.MaterialDesktopVideoControls(
+            toggle_fullscreen_on_double_press=False,
+            automatically_imply_skip_next_button=False,
+            automatically_imply_skip_previous_button=False,
+            bottom_button_bar=[
+                fvideo.VideoPlayOrPauseButton(),
+                fvideo.VideoVolumeButton(),
+                fvideo.VideoPositionIndicator(),
+                fvideo.VideoSpacer(),
+                self._video_control_focus_button(expanded=expanded),
+            ],
+        )
+        touch_controls = fvideo.MaterialVideoControls(
+            automatically_imply_skip_next_button=False,
+            automatically_imply_skip_previous_button=False,
+            bottom_button_bar=[
+                fvideo.VideoPositionIndicator(),
+                fvideo.VideoSpacer(),
+                self._video_control_focus_button(expanded=expanded),
+            ],
+        )
+        return fvideo.AdaptiveVideoControls(
+            material=touch_controls,
+            material_desktop=desktop_controls,
         )
 
     def _on_video_loaded(self, event: ft.ControlEvent) -> None:
@@ -857,35 +1360,76 @@ class GuitarTAApp:
         self.video_status.value = f"영상 로드 오류: {detail}"
         self.page.update()
 
+    def _on_video_position_change(self, event: ft.ControlEvent) -> None:
+        value = self._coerce_position_ms(getattr(event, "data", None))
+        if value is not None:
+            self.current_position_ms = value
+            self._enforce_active_loop_position(value)
+
     def _on_video_enter_fullscreen(self, event: ft.ControlEvent) -> None:
-        self.restore_app_fullscreen = bool(getattr(self.page.window, "full_screen", False))
+        self.video_fullscreen_active = True
+        self.restore_app_fullscreen = self._window_is_fullscreen()
+        if hasattr(self.video, "fullscreen"):
+            self.video.fullscreen = True
 
     def _on_video_exit_fullscreen(self, event: ft.ControlEvent) -> None:
+        self.video_fullscreen_active = True
         if not self.restore_app_fullscreen:
+            self.video_fullscreen_active = False
             return
 
-        def restore() -> None:
-            self.page.window.full_screen = True
-            self.page.update()
+        if hasattr(self.video, "fullscreen"):
+            self.video.fullscreen = False
+        self._schedule_window_fullscreen_restore()
 
-        timer = threading.Timer(0.2, restore)
-        timer.daemon = True
-        timer.start()
+    def _handle_window_event(self, event) -> None:
+        raw_event_type = getattr(event, "type", "") or ""
+        event_type = str(getattr(raw_event_type, "value", raw_event_type))
+        if (
+            self.video_fullscreen_active
+            and self.restore_app_fullscreen
+            and "leave-full-screen" in event_type
+        ):
+            self._schedule_window_fullscreen_restore()
+
+    def _schedule_window_fullscreen_restore(self) -> None:
+        self._restore_window_fullscreen_once()
+        for delay in FULLSCREEN_RESTORE_RECHECK_SECONDS:
+            timer = threading.Timer(delay, self._restore_window_fullscreen_once)
+            timer.daemon = True
+            timer.start()
+        clear_delay = max(FULLSCREEN_RESTORE_RECHECK_SECONDS) + 0.05
+        clear_timer = threading.Timer(clear_delay, self._clear_video_fullscreen_restore)
+        clear_timer.daemon = True
+        clear_timer.start()
+
+    def _restore_window_fullscreen_once(self) -> None:
+        if not self.restore_app_fullscreen:
+            return
+        self._set_window_fullscreen(True)
+        self.page.update()
+
+    def _clear_video_fullscreen_restore(self) -> None:
+        self.video_fullscreen_active = False
 
     def _play_video(self, event: ft.ControlEvent) -> None:
         self._call_video("play")
+        self.video_playing = True
 
     def _pause_video(self, event: ft.ControlEvent) -> None:
         self._call_video("pause")
+        self.video_playing = False
         self.loop_active = False
         self._cancel_loop_timer()
 
     def _seek_ms(self, position_ms: int) -> None:
         if hasattr(self.video, "seek"):
+            method = getattr(self.video, "seek")
             try:
-                self.video.seek(position_ms)
+                self._run_control_method(method, position_ms)
             except TypeError:
-                self.video.seek(position_ms / 1000)
+                self._run_control_method(method, position_ms / 1000)
+            self.current_position_ms = max(0, int(position_ms))
         self.page.update()
 
     def _change_rate(self, event: ft.ControlEvent) -> None:
@@ -904,16 +1448,52 @@ class GuitarTAApp:
             )
         self.page.update()
 
-    def _capture_position(self, event: ft.ControlEvent) -> None:
-        value = self._video_position_ms()
-        self.current_position_ms = value
-        self.marker_start_input.value = self._format_ms(value)
+    def _change_volume(self, event: ft.ControlEvent) -> None:
+        value = max(0, min(100, int(round(float(self.volume_slider.value or 0)))))
+        self.video_volume = value
+        self.volume_slider.value = value
+        self.volume_text.value = f"{value}%"
+        self.video.volume = value
         self.page.update()
 
+    def _preview_pitch(self, event: ft.ControlEvent) -> None:
+        value = self._pitch_slider_value()
+        self.pitch_slider.value = value
+        self.pitch_text.value = self._pitch_label(value)
+        self.page.update()
+
+    def _change_pitch(self, event: ft.ControlEvent) -> None:
+        if not self.selected_note:
+            return
+        value = self._pitch_slider_value()
+        self.audio_pitch_semitones = value
+        self.pitch_slider.value = value
+        self.pitch_text.value = self._pitch_label(value)
+        self.repo.update_note_audio_pitch(self.selected_note.id, value)
+        self.selected_note = self.repo.note(self.selected_note.id)
+        if self.selected_note:
+            self._load_video(self.selected_note)
+            self.detail_area.content = self._note_detail()
+        self.page.update()
+
+    def _capture_position(self, event: ft.ControlEvent) -> None:
+        self._capture_marker_position(self.marker_start_input)
+
     def _capture_end_position(self, event: ft.ControlEvent) -> None:
-        value = self._video_position_ms()
+        self._capture_marker_position(self.marker_end_input)
+
+    def _capture_marker_position(self, field: ft.TextField) -> None:
+        self._set_marker_position(field, self._video_position_ms())
+
+    def _set_marker_position(self, field: ft.TextField, value: Optional[int]) -> None:
+        value = self.current_position_ms if value is None else value
         self.current_position_ms = value
-        self.marker_end_input.value = self._format_ms(value)
+        field.value = self._format_ms(value)
+        self.page.update()
+
+    def _adjust_marker_time(self, field: ft.TextField, delta_ms: int) -> None:
+        value = max(0, self._timecode_to_ms(field.value) + delta_ms)
+        field.value = self._format_ms(value)
         self.page.update()
 
     def _add_marker(self, event: ft.ControlEvent) -> None:
@@ -967,25 +1547,30 @@ class GuitarTAApp:
 
     def _start_loop_for_marker(self, marker: TempoMarker) -> None:
         self._cancel_loop_timer()
+        self.selected_marker = marker
         self.loop_active = True
-        self._seek_ms(marker.start_ms)
-        self._call_video("play")
+        self.loop_last_restart_at = 0.0
+        self.video_playing = True
+        self._play_from_ms(marker.start_ms)
         self._schedule_loop_restart(marker)
         self.loop_status.value = "반복 재생 중"
         self.page.update()
 
     def _stop_loop(self, event: ft.ControlEvent) -> None:
         self.loop_active = False
+        self.video_playing = False
+        self._call_video("pause")
         self._cancel_loop_timer()
         self.loop_status.value = "반복 정지"
         self.page.update()
 
-    def _schedule_loop_restart(self, marker: Optional[TempoMarker]) -> None:
+    def _schedule_loop_restart(self, marker: Optional[TempoMarker], position_ms: Optional[int] = None) -> None:
         self._cancel_loop_timer()
         if not marker or marker.end_ms <= marker.start_ms:
             return
         rate = max(0.1, float(self.rate_slider.value or 1.0))
-        seconds = ((marker.end_ms - marker.start_ms) / 1000) / rate
+        start_ms = marker.start_ms if position_ms is None else max(marker.start_ms, min(marker.end_ms, position_ms))
+        seconds = ((marker.end_ms - start_ms) / 1000) / rate
         self.loop_timer = threading.Timer(seconds, lambda: self._restart_loop_from_timer(marker))
         self.loop_timer.daemon = True
         self.loop_timer.start()
@@ -998,8 +1583,25 @@ class GuitarTAApp:
     def _restart_loop_from_timer(self, marker: TempoMarker) -> None:
         if not self.loop_active:
             return
-        self._seek_ms(marker.start_ms)
-        self._call_video("play")
+        self.loop_last_restart_at = time.monotonic()
+        self.video_playing = True
+        self._play_from_ms(marker.start_ms)
+        self._schedule_loop_restart(marker)
+        self.loop_status.value = "반복 재생 중"
+        self.page.update()
+
+    def _enforce_active_loop_position(self, position_ms: int) -> None:
+        marker = self.selected_marker
+        if not self.loop_active or not marker or marker.end_ms <= marker.start_ms:
+            return
+        if position_ms < marker.end_ms:
+            return
+        now = time.monotonic()
+        if now - self.loop_last_restart_at < 0.3:
+            return
+        self.loop_last_restart_at = now
+        self.video_playing = True
+        self._play_from_ms(marker.start_ms)
         self._schedule_loop_restart(marker)
         self.loop_status.value = "반복 재생 중"
         self.page.update()
@@ -1007,21 +1609,99 @@ class GuitarTAApp:
     def _call_video(self, method_name: str) -> None:
         method = getattr(self.video, method_name, None)
         if callable(method):
-            method()
+            self._run_control_method(method)
         self.page.update()
+
+    def _toggle_video_playback(self) -> None:
+        if self.video_playing:
+            self._pause_video(None)
+            return
+        self.loop_active = False
+        self._cancel_loop_timer()
+        self._play_video(None)
+
+    def _run_control_method(self, method, *args) -> None:
+        if inspect.iscoroutinefunction(method):
+            if hasattr(self.page, "run_task"):
+                self.page.run_task(method, *args)
+            else:
+                asyncio.run(method(*args))
+            return
+        result = method(*args)
+        if inspect.isawaitable(result):
+            async def runner():
+                return await result
+
+            if hasattr(self.page, "run_task"):
+                self.page.run_task(runner)
+            else:
+                asyncio.run(runner())
+
+    def _play_from_ms(self, position_ms: int) -> None:
+        self.current_position_ms = max(0, int(position_ms))
+        seek = getattr(self.video, "seek", None)
+        play = getattr(self.video, "play", None)
+        if not callable(play):
+            return
+        self.video_playing = True
+
+        async def runner() -> None:
+            if callable(seek):
+                try:
+                    result = seek(position_ms)
+                except TypeError:
+                    result = seek(position_ms / 1000)
+                if inspect.isawaitable(result):
+                    await result
+            result = play()
+            if inspect.isawaitable(result):
+                await result
+
+        if inspect.iscoroutinefunction(play) or inspect.iscoroutinefunction(seek):
+            if hasattr(self.page, "run_task"):
+                self.page.run_task(runner)
+            else:
+                asyncio.run(runner())
+            return
+        if callable(seek):
+            try:
+                seek(position_ms)
+            except TypeError:
+                seek(position_ms / 1000)
+        play()
 
     def _video_position_ms(self) -> int:
         for attr in ("position", "current_position"):
             value = getattr(self.video, attr, None)
-            if isinstance(value, (int, float)):
-                return int(value)
-        method = getattr(self.video, "get_current_position", None)
-        if callable(method):
-            try:
-                return int(method())
-            except Exception:
-                return self.current_position_ms
+            position_ms = self._coerce_position_ms(value)
+            if position_ms is not None:
+                return position_ms
         return self.current_position_ms
+
+    @staticmethod
+    def _is_space_key(event: ft.KeyboardEvent) -> bool:
+        key = str(getattr(event, "key", "") or "").lower()
+        return key in {" ", "space", "spacebar"}
+
+    def _coerce_position_ms(self, value) -> Optional[int]:
+        in_milliseconds = getattr(value, "in_milliseconds", None)
+        if callable(in_milliseconds):
+            return max(0, int(in_milliseconds()))
+        if isinstance(in_milliseconds, (int, float)):
+            return max(0, int(in_milliseconds))
+        if isinstance(value, (int, float)):
+            return max(0, int(value))
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if text.isdigit():
+            return int(text)
+        if ":" in text:
+            return self._timecode_to_ms(text)
+        try:
+            return max(0, int(float(text)))
+        except ValueError:
+            return None
 
     def _category_name(self, category_id: Optional[int]) -> str:
         for category in self.categories:
@@ -1077,7 +1757,6 @@ class GuitarTAApp:
                     key="all",
                     text="전체",
                     content=ft.Text("전체", color=SIDEBAR_TEXT, size=14, weight=ft.FontWeight.BOLD),
-                    text_style=ft.TextStyle(color=SIDEBAR_TEXT, size=14, weight=ft.FontWeight.BOLD),
                 )
             )
         for category in self._ordered_categories(include_all=False):
@@ -1086,37 +1765,117 @@ class GuitarTAApp:
                     key=str(category.id),
                     text=category.name,
                     content=ft.Text(category.name, color=text_color, size=14),
-                    text_style=ft.TextStyle(color=text_color, size=14),
                 )
             )
         return options
 
+    def _audio_kind_options(self, note: Note) -> List[ft.dropdown.Option]:
+        options: List[ft.dropdown.Option] = []
+        for key, label in AUDIO_KIND_LABELS.items():
+            ready = key == "original" or self._audio_asset_ready(note, key)
+            display = label if ready else f"{label} (생성 전)"
+            color = TEXT if ready else MUTED
+            options.append(
+                ft.dropdown.Option(
+                    key=key,
+                    text=display,
+                    content=ft.Text(display, color=color, size=14),
+                )
+            )
+        return options
+
+    def _audio_kind_dropdown(self) -> ft.Dropdown:
+        dropdown = self._category_dropdown(
+            label="음원",
+            width=210,
+            include_all=False,
+            on_change=self._select_audio_from_dropdown,
+        )
+        dropdown.value = "original"
+        self._apply_dropdown_options(
+            dropdown,
+            [
+                ft.dropdown.Option(
+                    key=key,
+                    text=label,
+                    content=ft.Text(label, color=TEXT, size=14),
+                )
+                for key, label in AUDIO_KIND_LABELS.items()
+            ],
+        )
+        return dropdown
+
     def _category_dropdown(self, label: str, width: int, include_all: bool, on_change, sidebar: bool = False) -> ft.Dropdown:
-        return ft.Dropdown(
-            label=label,
-            width=width,
-            dense=True,
-            menu_width=width,
-            max_menu_height=260,
-            border_color="#BCA77C" if sidebar else LINE,
-            focused_border_color=SIDEBAR_TEXT if sidebar else ACCENT,
-            bgcolor="#FFF2D7" if sidebar else PANEL_2,
-            color=SIDEBAR_TEXT if sidebar else TEXT,
-            focused_color=SIDEBAR_TEXT if sidebar else TEXT,
-            text_style=ft.TextStyle(color=SIDEBAR_TEXT if sidebar else TEXT),
-            label_style=ft.TextStyle(color=SIDEBAR_MUTED if sidebar else MUTED),
-            select_icon_enabled_color=SIDEBAR_TEXT if sidebar else TEXT,
-            icon_enabled_color=SIDEBAR_TEXT if sidebar else TEXT,
-            options=[],
-            on_change=on_change,
+        params = inspect.signature(ft.Dropdown).parameters
+        kwargs = {
+            "label": label,
+            "width": width,
+            "dense": True,
+            "menu_width": width,
+            "border_color": "#BCA77C" if sidebar else LINE,
+            "focused_border_color": SIDEBAR_TEXT if sidebar else ACCENT,
+            "bgcolor": "#FFF2D7" if sidebar else PANEL_2,
+            "color": SIDEBAR_TEXT if sidebar else TEXT,
+            "text_style": ft.TextStyle(color=SIDEBAR_TEXT if sidebar else TEXT),
+            "label_style": ft.TextStyle(color=SIDEBAR_MUTED if sidebar else MUTED),
+            "options": [],
+        }
+        kwargs["menu_height" if "menu_height" in params else "max_menu_height"] = self._dropdown_menu_height(0)
+        kwargs["on_select" if "on_select" in params else "on_change"] = on_change
+        if "on_focus" in params:
+            kwargs["on_focus"] = lambda event: self._set_text_entry_active(True)
+        if "on_blur" in params:
+            kwargs["on_blur"] = lambda event: self._set_text_entry_active(False)
+        if "focused_color" in params:
+            kwargs["focused_color"] = SIDEBAR_TEXT if sidebar else TEXT
+        if "select_icon_enabled_color" in params:
+            kwargs["select_icon_enabled_color"] = SIDEBAR_TEXT if sidebar else TEXT
+        if "icon_enabled_color" in params:
+            kwargs["icon_enabled_color"] = SIDEBAR_TEXT if sidebar else TEXT
+        return ft.Dropdown(**{key: value for key, value in kwargs.items() if key in params})
+
+    def _apply_dropdown_options(self, dropdown: ft.Dropdown, options: List[ft.dropdown.Option]) -> None:
+        dropdown.options = options
+        height = self._dropdown_menu_height(len(options))
+        params = inspect.signature(ft.Dropdown).parameters
+        if "menu_height" in params:
+            dropdown.menu_height = height
+        elif "max_menu_height" in params:
+            dropdown.max_menu_height = height
+
+    @staticmethod
+    def _dropdown_menu_height(option_count: int) -> int:
+        return min(
+            DROPDOWN_MENU_MAX_HEIGHT,
+            max(DROPDOWN_OPTION_HEIGHT, option_count * DROPDOWN_OPTION_HEIGHT),
         )
 
-    def _text_field(self, label: str, width: Optional[int] = None, expand: bool = False, value: str = "") -> ft.TextField:
+    def _set_text_entry_active(self, active: bool) -> None:
+        self.text_entry_active = active
+
+    def _pitch_slider_value(self) -> int:
+        return max(-9, min(9, int(round(float(self.pitch_slider.value or 0)))))
+
+    @staticmethod
+    def _pitch_label(value: int) -> str:
+        if value > 0:
+            return f"+{value}키"
+        return f"{value}키"
+
+    def _text_field(
+        self,
+        label: str,
+        width: Optional[int] = None,
+        expand: bool = False,
+        value: str = "",
+        height: Optional[int] = None,
+    ) -> ft.TextField:
         return ft.TextField(
             label=label,
             value=value,
             width=width,
             expand=expand,
+            height=height,
             dense=True,
             border_color=LINE,
             focused_border_color=ACCENT,
@@ -1124,27 +1883,114 @@ class GuitarTAApp:
             color=TEXT,
             cursor_color=ACCENT,
             label_style=ft.TextStyle(color=MUTED),
+            on_focus=lambda event: self._set_text_entry_active(True),
+            on_blur=lambda event: self._set_text_entry_active(False),
         )
 
-    def _marker_name_field(self) -> ft.TextField:
+    def _marker_text_field(self, hint_text: str, value: str = "") -> ft.TextField:
         return ft.TextField(
-            label="구간 이름",
-            value="반복 구간",
+            value=value,
+            hint_text=hint_text,
             expand=True,
-            dense=False,
-            height=56,
+            dense=True,
+            text_size=14,
             border_color=LINE,
             focused_border_color=ACCENT,
             bgcolor=PANEL_2,
             color=TEXT,
             cursor_color=ACCENT,
-            label_style=ft.TextStyle(color=MUTED),
-            content_padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            hint_style=ft.TextStyle(color=MUTED, size=13),
+            content_padding=ft.padding.symmetric(horizontal=12, vertical=MARKER_FIELD_PAD_V),
+            on_focus=lambda event: self._set_text_entry_active(True),
+            on_blur=lambda event: self._set_text_entry_active(False),
+        )
+
+    def _marker_time_field(self, hint_text: str) -> ft.TextField:
+        return ft.TextField(
+            value="00:00",
+            hint_text=hint_text,
+            width=MARKER_TIME_FIELD_WIDTH,
+            dense=True,
+            text_size=14,
+            border_color=LINE,
+            focused_border_color=ACCENT,
+            bgcolor=PANEL_2,
+            color=TEXT,
+            cursor_color=ACCENT,
+            read_only=True,
+            hint_style=ft.TextStyle(color=MUTED, size=13),
+            content_padding=ft.padding.symmetric(horizontal=12, vertical=MARKER_FIELD_PAD_V),
+        )
+
+    def _marker_field_row(self, label: str, field: ft.Control, trailing: ft.Control) -> ft.Row:
+        return ft.Row(
+            [
+                ft.Container(
+                    width=MARKER_LABEL_WIDTH,
+                    alignment=ft.alignment.center_left,
+                    content=ft.Text(label, color=MUTED, size=13),
+                ),
+                ft.Container(expand=True),
+                field,
+                trailing,
+            ],
+            spacing=8,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+    def _marker_action_button(self, label: str, icon: str, handler) -> ft.ElevatedButton:
+        return ft.ElevatedButton(
+            content=ft.Row(
+                [
+                    ft.Icon(icon, color=BG, size=16),
+                    ft.Text(label, color=BG, size=13, weight=ft.FontWeight.BOLD),
+                ],
+                spacing=6,
+                tight=True,
+                alignment=ft.MainAxisAlignment.CENTER,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            on_click=handler,
+            width=MARKER_ACTION_BUTTON_WIDTH,
+            height=MARKER_ACTION_BUTTON_HEIGHT,
+            elevation=0,
+            style=ft.ButtonStyle(
+                bgcolor=ACCENT,
+                color=BG,
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.padding.all(0),
+            ),
+        )
+
+    def _marker_time_controls(self, field: ft.TextField, capture_icon: str, capture_handler) -> ft.Row:
+        return ft.Row(
+            [
+                self._marker_nudge_button("-1", lambda event, target=field: self._adjust_marker_time(target, -1000)),
+                self._marker_nudge_button("+1", lambda event, target=field: self._adjust_marker_time(target, 1000)),
+                self._marker_action_button("현재", capture_icon, capture_handler),
+            ],
+            spacing=6,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+    def _marker_nudge_button(self, label: str, handler) -> ft.ElevatedButton:
+        return ft.ElevatedButton(
+            content=ft.Text(label, color=BEIGE, size=12, weight=ft.FontWeight.BOLD),
+            on_click=handler,
+            width=34,
+            height=MARKER_ACTION_BUTTON_HEIGHT,
+            elevation=0,
+            style=ft.ButtonStyle(
+                bgcolor=PANEL_2,
+                color=BEIGE,
+                shape=ft.RoundedRectangleBorder(radius=6),
+                padding=ft.padding.all(0),
+            ),
         )
 
     def _button(self, label: str, icon: str, handler) -> ft.ElevatedButton:
         return ft.ElevatedButton(
-            text=label,
+            label,
             icon=icon,
             on_click=handler,
             style=ft.ButtonStyle(
@@ -1155,12 +2001,36 @@ class GuitarTAApp:
             ),
         )
 
-    def _compact_button(self, label: str, icon: str, handler, expand: bool = False) -> ft.ElevatedButton:
+    def _video_focus_button(self, expanded: bool) -> ft.ElevatedButton:
+        return self._button(
+            "영상 축소" if expanded else "영상 확대",
+            ft.Icons.FULLSCREEN_EXIT_ROUNDED if expanded else ft.Icons.FULLSCREEN_ROUNDED,
+            self._toggle_video_focus,
+        )
+
+    def _video_control_focus_button(self, expanded: bool) -> ft.IconButton:
+        return ft.IconButton(
+            icon=ft.Icons.FULLSCREEN_EXIT_ROUNDED if expanded else ft.Icons.FULLSCREEN_ROUNDED,
+            icon_color=TEXT,
+            icon_size=22,
+            tooltip="영상 축소" if expanded else "영상 확대",
+            on_click=self._toggle_video_focus,
+        )
+
+    def _compact_button(
+        self,
+        label: str,
+        icon: str,
+        handler,
+        expand: bool = False,
+        height: Optional[int] = None,
+    ) -> ft.ElevatedButton:
         return ft.ElevatedButton(
-            text=label,
+            label,
             icon=icon,
             on_click=handler,
             expand=expand,
+            height=height,
             style=ft.ButtonStyle(
                 bgcolor=ACCENT,
                 color=BG,
@@ -1187,6 +2057,8 @@ class GuitarTAApp:
             bgcolor=PANEL_2,
             color=TEXT,
             cursor_color=ACCENT,
+            on_focus=lambda event: self._set_text_entry_active(True),
+            on_blur=lambda event: self._set_text_entry_active(False),
         )
 
     def _category_add_button(self) -> ft.Container:
@@ -1212,7 +2084,7 @@ class GuitarTAApp:
 
     def _danger_button(self, label: str, icon: str, handler) -> ft.ElevatedButton:
         return ft.ElevatedButton(
-            text=label,
+            label,
             icon=icon,
             on_click=handler,
             style=ft.ButtonStyle(
@@ -1235,8 +2107,7 @@ class GuitarTAApp:
         total_ms = max(0, value)
         minutes = total_ms // 60000
         seconds = (total_ms % 60000) // 1000
-        centiseconds = (total_ms % 1000) // 10
-        return f"{minutes:02d}:{seconds:02d}:{centiseconds:02d}"
+        return f"{minutes:02d}:{seconds:02d}"
 
     @staticmethod
     def _timecode_to_ms(value: Optional[str]) -> int:
