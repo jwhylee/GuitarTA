@@ -38,6 +38,7 @@ class Repository:
                     drums_only_audio_path TEXT NOT NULL DEFAULT '',
                     selected_audio_kind TEXT NOT NULL DEFAULT 'original',
                     audio_pitch_semitones INTEGER NOT NULL DEFAULT 0,
+                    audio_volume INTEGER NOT NULL DEFAULT 100,
                     category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
                     memo TEXT NOT NULL DEFAULT '',
                     playback_rate REAL NOT NULL DEFAULT 1.0,
@@ -77,6 +78,7 @@ class Repository:
                 "drums_only_audio_path": "ALTER TABLE notes ADD COLUMN drums_only_audio_path TEXT NOT NULL DEFAULT ''",
                 "selected_audio_kind": "ALTER TABLE notes ADD COLUMN selected_audio_kind TEXT NOT NULL DEFAULT 'original'",
                 "audio_pitch_semitones": "ALTER TABLE notes ADD COLUMN audio_pitch_semitones INTEGER NOT NULL DEFAULT 0",
+                "audio_volume": "ALTER TABLE notes ADD COLUMN audio_volume INTEGER NOT NULL DEFAULT 100",
             }
             for column, statement in note_migrations.items():
                 if column not in note_columns:
@@ -254,6 +256,18 @@ class Repository:
                 (clean_pitch, note_id),
             )
 
+    def update_note_audio_volume(self, note_id: int, audio_volume: int) -> None:
+        clean_volume = max(0, min(100, int(audio_volume)))
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE notes
+                SET audio_volume = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                (clean_volume, note_id),
+            )
+
     def delete_note(self, note_id: int) -> None:
         with self._connect() as conn:
             conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
@@ -302,6 +316,35 @@ class Repository:
         with self._connect() as conn:
             conn.execute("DELETE FROM tempo_markers WHERE id = ?", (marker_id,))
 
+    def update_tempo_marker(
+        self,
+        marker_id: int,
+        name: str,
+        start_ms: int,
+        end_ms: int,
+        bpm: int,
+        beats_per_bar: int,
+        accent_first_beat: bool,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE tempo_markers
+                SET name = ?, start_ms = ?, end_ms = ?, bpm = ?,
+                    beats_per_bar = ?, accent_first_beat = ?
+                WHERE id = ?
+                """,
+                (
+                    name.strip() or "새 구간",
+                    max(0, start_ms),
+                    max(0, end_ms),
+                    max(20, min(300, bpm)),
+                    max(1, min(16, beats_per_bar)),
+                    1 if accent_first_beat else 0,
+                    marker_id,
+                ),
+            )
+
     @staticmethod
     def _category(row: sqlite3.Row) -> Category:
         return Category(id=row["id"], name=row["name"], created_at=row["created_at"])
@@ -319,6 +362,7 @@ class Repository:
             drums_only_audio_path=row["drums_only_audio_path"],
             selected_audio_kind=row["selected_audio_kind"],
             audio_pitch_semitones=int(row["audio_pitch_semitones"]),
+            audio_volume=max(0, min(100, int(row["audio_volume"]))),
             category_id=row["category_id"],
             memo=row["memo"],
             playback_rate=float(row["playback_rate"]),
