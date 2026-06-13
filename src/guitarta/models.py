@@ -21,6 +21,7 @@ class Note:
     drums_only_audio_path: str
     selected_audio_kind: str
     audio_pitch_semitones: int
+    audio_volume: int
     category_id: Optional[int]
     memo: str
     playback_rate: float

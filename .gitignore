@@ -1,4 +1,6 @@
 .venv/
+build/
+packaging/windows/dist/
 __pycache__/
 *.py[cod]
 *.egg-info/

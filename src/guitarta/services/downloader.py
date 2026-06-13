@@ -218,6 +218,12 @@ class YouTubeDownloader:
         ):
             if candidate.exists():
                 return str(candidate.parent)
+        try:
+            import imageio_ffmpeg
+
+            return str(Path(imageio_ffmpeg.get_ffmpeg_exe()).parent)
+        except Exception:
+            pass
         return None
 
     @staticmethod
