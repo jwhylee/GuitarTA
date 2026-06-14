@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -29,7 +30,7 @@ class YouTubeDownloader:
         url: str,
         progress: Optional[Callable[[str], None]] = None,
     ) -> Dict[str, str]:
-        clean_url = url.strip()
+        clean_url = self._normalize_url(url)
         if not clean_url:
             raise DownloadError("유튜브 링크를 입력해주세요.")
 
@@ -45,12 +46,19 @@ class YouTubeDownloader:
                 progress("영상 처리 중...")
 
         try:
-            external = self._find_external_yt_dlp()
-            if external:
-                return self._download_with_cli(clean_url, hook, external)
-            return self._download_with_options(clean_url, self._options(hook))
+            try:
+                return self._download_with_options(clean_url, self._options(hook))
+            except (ImportError, ModuleNotFoundError):
+                external = self._find_external_yt_dlp()
+                if external:
+                    return self._download_with_cli(clean_url, hook, external)
+                raise
         except Exception as exc:
             message = str(exc)
+            if "Failed to resolve" in message or "NameResolutionError" in message:
+                raise DownloadError(
+                    "YouTube에 연결하지 못했습니다. 네트워크 연결 또는 DNS 설정을 확인해주세요."
+                ) from exc
             if "HTTP Error 403" in message:
                 raise DownloadError(
                     "YouTube가 이 영상 파일 다운로드 요청을 차단했습니다. "
@@ -129,6 +137,7 @@ class YouTubeDownloader:
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
+            env=self._subprocess_env(),
         )
         output_lines = []
         existing_media_path: Optional[Path] = None
@@ -238,6 +247,31 @@ class YouTubeDownloader:
                 return candidate
         found = shutil.which("yt-dlp")
         return Path(found) if found else None
+
+    @staticmethod
+    def _normalize_url(url: str) -> str:
+        clean_url = url.strip()
+        if clean_url.startswith("tps://"):
+            return f"ht{clean_url}"
+        if clean_url.startswith("ttps://"):
+            return f"h{clean_url}"
+        if clean_url.startswith("www.youtube.com/") or clean_url.startswith("youtu.be/"):
+            return f"https://{clean_url}"
+        return clean_url
+
+    @staticmethod
+    def _subprocess_env() -> Dict[str, str]:
+        env = os.environ.copy()
+        for key in (
+            "PYTHONHOME",
+            "PYTHONPATH",
+            "PYTHONEXECUTABLE",
+            "__PYVENV_LAUNCHER__",
+        ):
+            env.pop(key, None)
+        env.setdefault("PYTHONUTF8", "1")
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+        return env
 
     @staticmethod
     def _compact_progress(line: str) -> str:
