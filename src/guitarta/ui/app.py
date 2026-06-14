@@ -81,7 +81,6 @@ MARKER_TIME_FIELD_WIDTH = 112
 MARKER_ACTION_BUTTON_WIDTH = 100
 MARKER_ACTION_BUTTON_HEIGHT = 33
 FULLSCREEN_RESTORE_RECHECK_SECONDS = (0.03, 0.1, 0.25)
-STARTUP_MAXIMIZE_RECHECK_SECONDS = (0.25, 0.7, 1.2)
 DROPDOWN_OPTION_HEIGHT = 48
 DROPDOWN_MENU_MAX_HEIGHT = 260
 AUDIO_KIND_LABELS = {
@@ -242,7 +241,6 @@ class GuitarTAApp:
         )
         self._refresh_all()
         self._prepare_missing_audio_assets()
-        self._maximize_on_start()
 
     def _sidebar(self) -> ft.Container:
         return ft.Container(
@@ -1258,13 +1256,6 @@ class GuitarTAApp:
                 setattr(target, attr, value)
                 return
 
-    def _set_window_maximized(self, value: bool) -> None:
-        window = getattr(self.page, "window", None)
-        for target, attr in ((window, "maximized"), (self.page, "window_maximized")):
-            if target is not None and hasattr(target, attr):
-                setattr(target, attr, value)
-                return
-
     def _selected_audio_kind(self, note: Note) -> str:
         if note.selected_audio_kind in {"original", "bass_removed", "guitar_removed", "drums_only"}:
             return note.selected_audio_kind
@@ -1554,21 +1545,6 @@ class GuitarTAApp:
 
     def _clear_video_fullscreen_restore(self) -> None:
         self.video_fullscreen_active = False
-
-    def _maximize_on_start(self) -> None:
-        # Avoid native macOS fullscreen here because it creates a separate Space
-        # and can interfere with Cmd+Tab during background work. Also defer the
-        # first maximize until after the initial Flutter frame is rendered.
-        for delay in STARTUP_MAXIMIZE_RECHECK_SECONDS:
-            timer = threading.Timer(delay, self._reassert_maximized)
-            timer.daemon = True
-            timer.start()
-
-    def _reassert_maximized(self) -> None:
-        if self.video_fullscreen_active or self._window_is_fullscreen():
-            return
-        self._set_window_maximized(True)
-        self.page.update()
 
     def _play_video(self, event: ft.ControlEvent) -> None:
         self._call_video("play")

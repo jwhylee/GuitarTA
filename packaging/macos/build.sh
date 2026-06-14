@@ -31,3 +31,42 @@ rsync -a \
   --info-plist NSQuitAlwaysKeepsWindows=false \
   --clear-cache \
   --yes
+
+RUNNER_SWIFT="$STAGE_DIR/build/flutter/macos/Runner/MainFlutterWindow.swift"
+FLUTTER_BIN="${FLUTTER_BIN:-}"
+if [[ -z "$FLUTTER_BIN" ]]; then
+  if command -v flutter >/dev/null 2>&1; then
+    FLUTTER_BIN="$(command -v flutter)"
+  else
+    FLUTTER_BIN="$HOME/flutter/3.41.7/bin/flutter"
+  fi
+fi
+
+python3 - "$RUNNER_SWIFT" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+old = """    let windowFrame = self.frame
+    self.contentViewController = flutterViewController
+    self.setFrame(windowFrame, display: true)
+"""
+new = """    self.contentViewController = flutterViewController
+    if let screenFrame = NSScreen.main?.visibleFrame {
+      self.setFrame(screenFrame, display: true)
+    }
+"""
+if old not in text:
+    raise SystemExit(f"Unable to patch initial macOS window frame in {path}")
+path.write_text(text.replace(old, new))
+PY
+
+(
+  cd "$STAGE_DIR/build/flutter"
+  "$FLUTTER_BIN" build macos --release
+)
+
+rm -rf "$OUTPUT_DIR/GuitarTA.app"
+mkdir -p "$OUTPUT_DIR"
+cp -R "$STAGE_DIR/build/flutter/build/macos/Build/Products/Release/GuitarTA.app" "$OUTPUT_DIR/"
