@@ -1,6 +1,7 @@
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
-from typing import List, Optional
+from typing import Iterator, List, Optional
 
 from guitarta.models import Category, Note, TempoMarker
 
@@ -17,8 +18,17 @@ class Repository:
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        conn = self._connect()
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
     def _init_schema(self) -> None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS categories (
@@ -93,7 +103,7 @@ class Repository:
             )
 
     def categories(self) -> List[Category]:
-        with self._connect() as conn:
+        with self._connection() as conn:
             rows = conn.execute("SELECT * FROM categories ORDER BY name").fetchall()
         return [self._category(row) for row in rows]
 
@@ -104,29 +114,29 @@ class Repository:
             sql += " WHERE category_id = ?"
             params = (category_id,)
         sql += " ORDER BY updated_at DESC, id DESC"
-        with self._connect() as conn:
+        with self._connection() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [self._note(row) for row in rows]
 
     def note(self, note_id: int) -> Optional[Note]:
-        with self._connect() as conn:
+        with self._connection() as conn:
             row = conn.execute("SELECT * FROM notes WHERE id = ?", (note_id,)).fetchone()
         return self._note(row) if row else None
 
     def category_by_name(self, name: str) -> Optional[Category]:
-        with self._connect() as conn:
+        with self._connection() as conn:
             row = conn.execute("SELECT * FROM categories WHERE name = ?", (name,)).fetchone()
         return self._category(row) if row else None
 
     def create_category(self, name: str) -> Category:
         clean_name = name.strip() or "미분류"
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute("INSERT OR IGNORE INTO categories(name) VALUES (?)", (clean_name,))
             row = conn.execute("SELECT * FROM categories WHERE name = ?", (clean_name,)).fetchone()
         return self._category(row)
 
     def delete_category(self, category_id: int) -> None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
 
     def create_note(
@@ -140,7 +150,7 @@ class Repository:
         guitar_removed_audio_path: str = "",
         drums_only_audio_path: str = "",
     ) -> Note:
-        with self._connect() as conn:
+        with self._connection() as conn:
             cur = conn.execute(
                 """
                 INSERT INTO notes(
@@ -175,7 +185,7 @@ class Repository:
         playback_rate: float,
         category_id: Optional[int],
     ) -> None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute(
                 """
                 UPDATE notes
@@ -192,7 +202,7 @@ class Repository:
         source_url: str,
         media_path: str,
     ) -> None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute(
                 """
                 UPDATE notes
@@ -214,7 +224,7 @@ class Repository:
         guitar_removed_audio_path: str,
         drums_only_audio_path: str = "",
     ) -> None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute(
                 """
                 UPDATE notes
@@ -234,7 +244,7 @@ class Repository:
 
     def update_note_audio_kind(self, note_id: int, selected_audio_kind: str) -> None:
         clean_kind = selected_audio_kind if selected_audio_kind in {"original", "bass_removed", "guitar_removed", "drums_only"} else "original"
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute(
                 """
                 UPDATE notes
@@ -246,7 +256,7 @@ class Repository:
 
     def update_note_audio_pitch(self, note_id: int, audio_pitch_semitones: int) -> None:
         clean_pitch = max(-9, min(9, int(audio_pitch_semitones)))
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute(
                 """
                 UPDATE notes
@@ -258,7 +268,7 @@ class Repository:
 
     def update_note_audio_volume(self, note_id: int, audio_volume: int) -> None:
         clean_volume = max(0, min(100, int(audio_volume)))
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute(
                 """
                 UPDATE notes
@@ -269,11 +279,11 @@ class Repository:
             )
 
     def delete_note(self, note_id: int) -> None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
 
     def tempo_markers(self, note_id: int) -> List[TempoMarker]:
-        with self._connect() as conn:
+        with self._connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM tempo_markers WHERE note_id = ? ORDER BY start_ms, id",
                 (note_id,),
@@ -290,7 +300,7 @@ class Repository:
         accent_first_beat: bool,
         end_ms: int = 0,
     ) -> TempoMarker:
-        with self._connect() as conn:
+        with self._connection() as conn:
             cur = conn.execute(
                 """
                 INSERT INTO tempo_markers(
@@ -313,7 +323,7 @@ class Repository:
         return self._marker(row)
 
     def delete_tempo_marker(self, marker_id: int) -> None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute("DELETE FROM tempo_markers WHERE id = ?", (marker_id,))
 
     def update_tempo_marker(
@@ -326,7 +336,7 @@ class Repository:
         beats_per_bar: int,
         accent_first_beat: bool,
     ) -> None:
-        with self._connect() as conn:
+        with self._connection() as conn:
             conn.execute(
                 """
                 UPDATE tempo_markers

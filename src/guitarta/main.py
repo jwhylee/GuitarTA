@@ -14,9 +14,13 @@ def _preserve_packaged_runtime_dependencies() -> None:
     import urllib3  # noqa: F401
 
 
-def main() -> None:
+def app(page: ft.Page) -> None:
     _preserve_packaged_runtime_dependencies()
-    ft.app(target=lambda page: GuitarTAApp(page).build())
+    GuitarTAApp(page).build()
+
+
+def main() -> None:
+    ft.app(target=app)
 
 
 if __name__ == "__main__":

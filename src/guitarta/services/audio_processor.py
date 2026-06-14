@@ -1,6 +1,7 @@
 import shutil
 import subprocess
-import sys
+import time
+from contextlib import redirect_stderr, redirect_stdout
 from math import pow
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional
@@ -190,19 +191,7 @@ class AudioProcessor:
             shutil.rmtree(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        self._run(
-            [
-                sys.executable,
-                "-m",
-                "demucs.separate",
-                "-n",
-                DEMUX_MODEL,
-                "-o",
-                str(output_dir),
-                str(audio_path),
-            ],
-            progress=progress,
-        )
+        self._run_demucs(audio_path, output_dir, progress)
 
         stems = self._find_stems(output_dir)
         missing = sorted(REQUIRED_STEMS.difference(stems))
@@ -347,6 +336,37 @@ class AudioProcessor:
             detail = "\n".join(output[-10:])
             raise AudioProcessingError(detail or "오디오 처리 명령이 실패했습니다.")
 
+    def _run_demucs(
+        self,
+        audio_path: Path,
+        output_dir: Path,
+        progress: Optional[Callable[[str], None]],
+    ) -> None:
+        try:
+            from demucs.separate import main as demucs_main
+        except Exception as exc:
+            raise AudioProcessingError(f"Demucs를 불러오지 못했습니다: {exc}") from exc
+
+        args = [
+            "-n",
+            DEMUX_MODEL,
+            "-o",
+            str(output_dir),
+            str(audio_path),
+        ]
+        progress_stream = _ProgressStream(progress)
+        try:
+            with redirect_stdout(progress_stream), redirect_stderr(progress_stream):
+                demucs_main(args)
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else 1
+            if code != 0:
+                raise AudioProcessingError(
+                    progress_stream.tail() or f"Demucs가 종료 코드 {code}로 실패했습니다."
+                ) from exc
+        except Exception as exc:
+            raise AudioProcessingError(progress_stream.tail() or str(exc)) from exc
+
     def _ffmpeg(self) -> str:
         for command in ("ffmpeg", "ffmpeg.exe"):
             found = shutil.which(command)
@@ -393,3 +413,56 @@ class AudioProcessor:
     def _report(progress: Optional[Callable[[str], None]], text: str) -> None:
         if progress is not None:
             progress(text)
+
+
+class _ProgressStream:
+    def __init__(self, progress: Optional[Callable[[str], None]]) -> None:
+        self.progress = progress
+        self.buffer = ""
+        self.lines: List[str] = []
+        self.last_emit_at = 0.0
+        self.emitting = False
+
+    def write(self, text: str) -> int:
+        if not text:
+            return 0
+        if self.emitting:
+            return len(text)
+        self.buffer += text
+        while "\n" in self.buffer or "\r" in self.buffer:
+            newline_index = self._next_separator_index()
+            chunk = self.buffer[:newline_index].strip()
+            self.buffer = self.buffer[newline_index + 1:]
+            self._emit(chunk)
+        return len(text)
+
+    def flush(self) -> None:
+        chunk = self.buffer.strip()
+        if chunk:
+            self._emit(chunk, force=True)
+            self.buffer = ""
+
+    def isatty(self) -> bool:
+        return False
+
+    def tail(self) -> str:
+        self.flush()
+        return "\n".join(self.lines[-10:])
+
+    def _next_separator_index(self) -> int:
+        indexes = [index for index in (self.buffer.find("\n"), self.buffer.find("\r")) if index >= 0]
+        return min(indexes)
+
+    def _emit(self, text: str, force: bool = False) -> None:
+        if not text:
+            return
+        clean = " ".join(text.split())
+        self.lines.append(clean)
+        now = time.monotonic()
+        if self.progress is not None and (force or now - self.last_emit_at >= 1.0):
+            self.emitting = True
+            try:
+                self.progress(clean)
+                self.last_emit_at = now
+            finally:
+                self.emitting = False
