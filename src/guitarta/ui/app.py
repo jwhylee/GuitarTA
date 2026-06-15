@@ -432,6 +432,7 @@ class GuitarTAApp:
                 ],
                 expand=True,
                 spacing=14,
+                scroll=ft.ScrollMode.AUTO,
             ),
         )
 

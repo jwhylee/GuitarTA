@@ -70,3 +70,4 @@ PY
 rm -rf "$OUTPUT_DIR/GuitarTA.app"
 mkdir -p "$OUTPUT_DIR"
 cp -R "$STAGE_DIR/build/flutter/build/macos/Build/Products/Release/GuitarTA.app" "$OUTPUT_DIR/"
+rm -rf "$STAGE_DIR/build/flutter/build/macos/Build/Products/Release/GuitarTA.app"
