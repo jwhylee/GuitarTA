@@ -612,7 +612,7 @@ class GuitarTAApp:
         return ft.Container(
             width=SCALE_BOARD_WIDTH,
             height=board_h,
-            bgcolor="#000000",
+            bgcolor=BG,
             border_radius=8,
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
             content=ft.Stack(
