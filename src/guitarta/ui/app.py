@@ -90,8 +90,11 @@ AUDIO_KIND_LABELS = {
     "drums_only": "드럼 단독",
 }
 SIDEBAR_TOOL_BUTTON_HEIGHT = 58
-SCALE_BOARD_WIDTH = 920
+SCALE_BOARD_WIDTH = 980
 SCALE_PRESS_RATIO = 0.68
+SCALE_OPEN_MARKER_X = 30
+SCALE_FRET_NUMBER_HEIGHT = 28
+SCALE_NUMBER_FRETS = [3, 5, 7, 9, 12, 15, 17, 19, 21]
 CHROMATIC = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 SHARP_TO_FLAT = {"C#": "D♭", "D#": "E♭", "F#": "G♭", "G#": "A♭", "A#": "B♭"}
 INTERVAL_LABELS = {
@@ -152,7 +155,7 @@ SCALE_INSTRUMENTS = {
         "label": "기타",
         "image": "guitar_fretboard_22.png",
         "image_size": (4096, 1050),
-        "open_x": 135,
+        "crop_left": 190,
         "board_left": 256,
         "board_right": 4008,
         "string_y": [95, 256, 418, 580, 741, 902],
@@ -163,7 +166,7 @@ SCALE_INSTRUMENTS = {
         "label": "베이스",
         "image": "bass_fretboard_20.png",
         "image_size": (4096, 790),
-        "open_x": 135,
+        "crop_left": 190,
         "board_left": 256,
         "board_right": 4008,
         "string_y": [96, 278, 459, 642],
@@ -554,55 +557,58 @@ class GuitarTAApp:
         )
 
     def _scale_info_panel(self, scale: Dict, notes: List[str], degrees: List[str]) -> ft.Control:
-        return ft.Container(
-            bgcolor=PANEL_2,
-            border=ft.border.all(1, LINE),
-            border_radius=8,
-            padding=ft.padding.all(12),
-            content=ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ft.Text(scale["name"], color=BEIGE, size=16, weight=ft.FontWeight.BOLD),
-                            ft.Text(scale.get("desc", ""), color=MUTED, size=12, expand=True),
-                        ],
-                        spacing=10,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                    ft.Row(
-                        [
-                            ft.Text("구성음", color=MUTED, size=12, width=48),
-                            ft.Row([self._scale_note_chip(note, idx == 0) for idx, note in enumerate(notes)], spacing=6),
-                        ],
-                        spacing=8,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                    ft.Row(
-                        [
-                            ft.Text("도수", color=MUTED, size=12, width=48),
-                            ft.Text("  ".join(degrees), color=TEXT, size=13),
-                        ],
-                        spacing=8,
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                ],
-                spacing=8,
-            ),
+        return ft.Column(
+            [
+                ft.Row(
+                    [
+                        ft.Text(scale["name"], color=BEIGE, size=16, weight=ft.FontWeight.BOLD),
+                        ft.Text(scale.get("desc", ""), color=MUTED, size=12, expand=True),
+                    ],
+                    spacing=10,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Row(
+                    [
+                        ft.Text("구성음", color=MUTED, size=12, width=48),
+                        ft.Text("  ".join(notes), color=TEXT, size=14, weight=ft.FontWeight.BOLD),
+                    ],
+                    spacing=8,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Row(
+                    [
+                        ft.Text("도수", color=MUTED, size=12, width=48),
+                        ft.Text("  ".join(degrees), color=TEXT, size=13),
+                    ],
+                    spacing=8,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Divider(color=LINE),
+            ],
+            spacing=8,
         )
 
     def _scale_fretboard(self) -> ft.Control:
         inst = SCALE_INSTRUMENTS[self.scale_instrument]
         image_w, image_h = inst["image_size"]
-        board_h = round(SCALE_BOARD_WIDTH * image_h / image_w)
+        crop_left = int(inst.get("crop_left", 0))
+        visible_raw_w = image_w - crop_left
+        image_scale = SCALE_BOARD_WIDTH / visible_raw_w
+        image_display_w = round(image_w * image_scale)
+        image_display_h = round(image_h * image_scale)
+        board_h = image_display_h + SCALE_FRET_NUMBER_HEIGHT
         controls = [
             ft.Image(
                 src=inst["image"],
-                width=SCALE_BOARD_WIDTH,
-                height=board_h,
+                left=round(-crop_left * image_scale),
+                top=0,
+                width=image_display_w,
+                height=image_display_h,
                 fit=ft.BoxFit.CONTAIN,
             )
         ]
-        controls.extend(self._scale_fret_markers(inst, board_h))
+        controls.extend(self._scale_fret_markers(inst, image_scale))
+        controls.extend(self._scale_fret_numbers(inst, image_scale, image_display_h))
         return ft.Container(
             width=SCALE_BOARD_WIDTH,
             height=board_h,
@@ -616,7 +622,7 @@ class GuitarTAApp:
             ),
         )
 
-    def _scale_fret_markers(self, inst: Dict, board_h: int) -> List[ft.Control]:
+    def _scale_fret_markers(self, inst: Dict, image_scale: float) -> List[ft.Control]:
         scale = self._current_scale()
         if scale is None:
             return []
@@ -625,10 +631,8 @@ class GuitarTAApp:
             CHROMATIC[(root_idx + interval) % 12]
             for interval in scale["intervals"]
         }
-        image_w, image_h = inst["image_size"]
-        sx = SCALE_BOARD_WIDTH / image_w
-        sy = board_h / image_h
         markers: List[ft.Control] = []
+        crop_left = float(inst.get("crop_left", 0))
         for string_idx, open_midi in enumerate(inst["tuning"]):
             for fret in range(0, inst["max_fret"] + 1):
                 midi = open_midi + fret
@@ -640,8 +644,8 @@ class GuitarTAApp:
                 size = 26 if is_root and self.scale_highlight_root else 22
                 markers.append(
                     ft.Container(
-                        left=x * sx - size / 2,
-                        top=y * sy - size / 2,
+                        left=(x - crop_left) * image_scale - size / 2,
+                        top=y * image_scale - size / 2,
                         width=size,
                         height=size,
                         bgcolor=ACCENT if is_root and self.scale_highlight_root else "#FFF7EA",
@@ -669,23 +673,55 @@ class GuitarTAApp:
                 )
         return markers
 
+    def _scale_fret_numbers(self, inst: Dict, image_scale: float, image_display_h: int) -> List[ft.Control]:
+        numbers: List[ft.Control] = []
+        crop_left = float(inst.get("crop_left", 0))
+        for fret in SCALE_NUMBER_FRETS:
+            if fret > int(inst["max_fret"]):
+                continue
+            x = self._scale_fret_mid_x(inst, fret)
+            numbers.append(
+                ft.Container(
+                    left=(x - crop_left) * image_scale - 12,
+                    top=image_display_h + 4,
+                    width=24,
+                    height=20,
+                    alignment=ft.alignment.center,
+                    content=ft.Text(
+                        str(fret),
+                        color=MUTED,
+                        size=12,
+                        weight=ft.FontWeight.BOLD,
+                        text_align=ft.TextAlign.CENTER,
+                    ),
+                )
+            )
+        return numbers
+
     def _scale_marker_position(self, inst: Dict, fret: int, string_idx: int) -> Tuple[float, float]:
         y = inst["string_y"][string_idx]
         if fret == 0:
-            return float(inst["open_x"]), float(y)
+            return float(inst["crop_left"]) + SCALE_OPEN_MARKER_X, float(y)
+        return self._scale_fret_press_x(inst, fret), float(y)
+
+    def _scale_fret_press_x(self, inst: Dict, fret: int) -> float:
+        prev_x = self._scale_fret_line_x(inst, fret - 1)
+        next_x = self._scale_fret_line_x(inst, fret)
+        return prev_x + (next_x - prev_x) * SCALE_PRESS_RATIO
+
+    def _scale_fret_mid_x(self, inst: Dict, fret: int) -> float:
+        prev_x = self._scale_fret_line_x(inst, fret - 1)
+        next_x = self._scale_fret_line_x(inst, fret)
+        return (prev_x + next_x) / 2
+
+    def _scale_fret_line_x(self, inst: Dict, fret_no: int) -> float:
         board_left = float(inst["board_left"])
+        if fret_no <= 0:
+            return board_left
         board_len = float(inst["board_right"] - inst["board_left"])
         max_fret = int(inst["max_fret"])
-
-        def fret_line(fret_no: int) -> float:
-            if fret_no <= 0:
-                return board_left
-            normalized = (1 - 2 ** (-fret_no / 12)) / (1 - 2 ** (-max_fret / 12))
-            return board_left + board_len * normalized
-
-        prev_x = fret_line(fret - 1)
-        next_x = fret_line(fret)
-        return prev_x + (next_x - prev_x) * SCALE_PRESS_RATIO, float(y)
+        normalized = (1 - 2 ** (-fret_no / 12)) / (1 - 2 ** (-max_fret / 12))
+        return board_left + board_len * normalized
 
     def _scale_instrument_button(self, instrument: str, icon: str) -> ft.Container:
         selected = self.scale_instrument == instrument
