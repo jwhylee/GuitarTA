@@ -91,8 +91,9 @@ AUDIO_KIND_LABELS = {
 }
 SIDEBAR_TOOL_BUTTON_HEIGHT = 58
 SCALE_BOARD_WIDTH = 880
+SCALE_BOARD_IMAGE_WIDTH = 850
+SCALE_BOARD_CONTENT_X = 20
 SCALE_PRESS_RATIO = 0.68
-SCALE_OPEN_MARKER_X = 30
 SCALE_FRET_NUMBER_HEIGHT = 28
 SCALE_NUMBER_FRETS = [3, 5, 7, 9, 12, 15, 17, 19, 21]
 CHROMATIC = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -592,13 +593,15 @@ class GuitarTAApp:
     def _scale_fretboard(self) -> ft.Control:
         inst = SCALE_INSTRUMENTS[self.scale_instrument]
         image_w, image_h = inst["image_size"]
-        image_scale = SCALE_BOARD_WIDTH / image_w
+        image_scale = SCALE_BOARD_IMAGE_WIDTH / image_w
         image_display_h = round(image_h * image_scale)
         board_h = image_display_h + SCALE_FRET_NUMBER_HEIGHT
         controls = [
             ft.Image(
                 src=inst["image"],
-                width=SCALE_BOARD_WIDTH,
+                left=SCALE_BOARD_CONTENT_X,
+                top=0,
+                width=SCALE_BOARD_IMAGE_WIDTH,
                 height=image_display_h,
                 fit=ft.BoxFit.CONTAIN,
             )
@@ -629,7 +632,7 @@ class GuitarTAApp:
         }
         markers: List[ft.Control] = []
         for string_idx, open_midi in enumerate(inst["tuning"]):
-            for fret in range(0, inst["max_fret"] + 1):
+            for fret in range(1, inst["max_fret"] + 1):
                 midi = open_midi + fret
                 pc = CHROMATIC[midi % 12]
                 if pc not in scale_pcs:
@@ -639,7 +642,7 @@ class GuitarTAApp:
                 size = 26 if is_root and self.scale_highlight_root else 22
                 markers.append(
                     ft.Container(
-                        left=x * image_scale - size / 2,
+                        left=SCALE_BOARD_CONTENT_X + x * image_scale - size / 2,
                         top=y * image_scale - size / 2,
                         width=size,
                         height=size,
@@ -676,7 +679,7 @@ class GuitarTAApp:
             x = self._scale_fret_mid_x(inst, fret)
             numbers.append(
                 ft.Container(
-                    left=x * image_scale - 12,
+                    left=SCALE_BOARD_CONTENT_X + x * image_scale - 12,
                     top=image_display_h + 4,
                     width=24,
                     height=20,
@@ -694,8 +697,6 @@ class GuitarTAApp:
 
     def _scale_marker_position(self, inst: Dict, fret: int, string_idx: int) -> Tuple[float, float]:
         y = inst["string_y"][string_idx]
-        if fret == 0:
-            return SCALE_OPEN_MARKER_X, float(y)
         return self._scale_fret_press_x(inst, fret), float(y)
 
     def _scale_fret_press_x(self, inst: Dict, fret: int) -> float:
