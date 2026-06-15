@@ -93,6 +93,7 @@ SIDEBAR_TOOL_BUTTON_HEIGHT = 58
 SCALE_BOARD_WIDTH = 960
 SCALE_BOARD_IMAGE_WIDTH = 930
 SCALE_BOARD_CONTENT_X = 15
+SCALE_OPEN_STRING_X_RATIO = 0.3
 SCALE_PRESS_RATIO = 0.68
 SCALE_FRET_NUMBER_HEIGHT = 54
 SCALE_NUMBER_FRETS = [3, 5, 7, 9, 12, 15, 17, 19, 21]
@@ -632,7 +633,7 @@ class GuitarTAApp:
         }
         markers: List[ft.Control] = []
         for string_idx, open_midi in enumerate(inst["tuning"]):
-            for fret in range(1, inst["max_fret"] + 1):
+            for fret in range(0, inst["max_fret"] + 1):
                 midi = open_midi + fret
                 pc = CHROMATIC[midi % 12]
                 if pc not in scale_pcs:
@@ -697,6 +698,8 @@ class GuitarTAApp:
 
     def _scale_marker_position(self, inst: Dict, fret: int, string_idx: int) -> Tuple[float, float]:
         y = inst["string_y"][string_idx]
+        if fret == 0:
+            return float(inst["board_left"]) * SCALE_OPEN_STRING_X_RATIO, float(y)
         return self._scale_fret_press_x(inst, fret), float(y)
 
     def _scale_fret_press_x(self, inst: Dict, fret: int) -> float:
