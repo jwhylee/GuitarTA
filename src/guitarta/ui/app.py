@@ -156,6 +156,8 @@ SCALE_INSTRUMENTS = {
     "guitar": {
         "label": "기타",
         "image": "guitar_fretboard_22.png",
+        "icon_dark": "guitar_icon_dark.png",
+        "icon_light": "guitar_icon_light.png",
         "image_size": (4570, 1050),
         "board_left": 85.5,
         "board_right": 4484,
@@ -166,6 +168,8 @@ SCALE_INSTRUMENTS = {
     "bass": {
         "label": "베이스",
         "image": "bass_fretboard_20.png",
+        "icon_dark": "bass_icon_dark.png",
+        "icon_light": "bass_icon_light.png",
         "image_size": (4570, 790),
         "board_left": 85.5,
         "board_right": 4484,
@@ -508,8 +512,8 @@ class GuitarTAApp:
                 [
                     ft.Row(
                         [
-                            self._scale_instrument_button("guitar", ft.Icons.MUSIC_NOTE_ROUNDED),
-                            self._scale_instrument_button("bass", ft.Icons.GRAPHIC_EQ_ROUNDED),
+                            self._scale_instrument_button("guitar"),
+                            self._scale_instrument_button("bass"),
                             self._scale_dropdown(
                                 "루트",
                                 self.scale_root,
@@ -721,8 +725,9 @@ class GuitarTAApp:
         normalized = (1 - 2 ** (-fret_no / 12)) / (1 - 2 ** (-max_fret / 12))
         return board_left + board_len * normalized
 
-    def _scale_instrument_button(self, instrument: str, icon: str) -> ft.Container:
+    def _scale_instrument_button(self, instrument: str) -> ft.Container:
         selected = self.scale_instrument == instrument
+        instrument_info = SCALE_INSTRUMENTS[instrument]
         return ft.Container(
             width=112,
             height=44,
@@ -733,9 +738,14 @@ class GuitarTAApp:
             on_click=lambda event, value=instrument: self._set_scale_instrument(value),
             content=ft.Row(
                 [
-                    ft.Icon(icon, color=BG if selected else BEIGE, size=18),
+                    ft.Image(
+                        src=instrument_info["icon_dark"] if selected else instrument_info["icon_light"],
+                        width=24,
+                        height=28,
+                        fit=ft.BoxFit.CONTAIN,
+                    ),
                     ft.Text(
-                        SCALE_INSTRUMENTS[instrument]["label"],
+                        instrument_info["label"],
                         color=BG if selected else BEIGE,
                         size=13,
                         weight=ft.FontWeight.BOLD,
