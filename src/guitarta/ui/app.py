@@ -3,7 +3,7 @@ import asyncio
 import threading
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import flet as ft
 import flet_video as fvideo
@@ -90,6 +90,87 @@ AUDIO_KIND_LABELS = {
     "drums_only": "드럼 단독",
 }
 SIDEBAR_TOOL_BUTTON_HEIGHT = 58
+SCALE_BOARD_WIDTH = 920
+SCALE_PRESS_RATIO = 0.68
+CHROMATIC = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+SHARP_TO_FLAT = {"C#": "D♭", "D#": "E♭", "F#": "G♭", "G#": "A♭", "A#": "B♭"}
+INTERVAL_LABELS = {
+    0: "1",
+    1: "♭2",
+    2: "2",
+    3: "♭3",
+    4: "3",
+    5: "4",
+    6: "♯4",
+    7: "5",
+    8: "♭6",
+    9: "6",
+    10: "♭7",
+    11: "7",
+}
+SCALE_CATEGORY_LABELS = {
+    "major": "메이저",
+    "minor": "마이너",
+    "pent": "펜타/블루스",
+    "modes": "모드",
+    "exotic": "특이 스케일",
+}
+SCALE_LIBRARY = {
+    "major": [
+        {"id": "major", "name": "메이저 스케일", "intervals": [0, 2, 4, 5, 7, 9, 11], "desc": "가장 기본적인 장조 스케일."},
+    ],
+    "minor": [
+        {"id": "nat_minor", "name": "내추럴 마이너 (Aeolian)", "intervals": [0, 2, 3, 5, 7, 8, 10], "desc": "기본 단조 스케일."},
+        {"id": "harm_minor", "name": "하모닉 마이너", "intervals": [0, 2, 3, 5, 7, 8, 11], "desc": "7음을 반음 올린 단조."},
+        {"id": "mel_minor", "name": "멜로딕 마이너 (재즈)", "intervals": [0, 2, 3, 5, 7, 9, 11], "desc": "재즈에서 많이 쓰는 상행 멜로딕 마이너."},
+    ],
+    "pent": [
+        {"id": "maj_pent", "name": "메이저 펜타토닉", "intervals": [0, 2, 4, 7, 9], "desc": "메이저의 4, 7을 뺀 5음 스케일."},
+        {"id": "min_pent", "name": "마이너 펜타토닉", "intervals": [0, 3, 5, 7, 10], "desc": "록, 블루스, 발라드의 기본 5음 스케일."},
+        {"id": "blues", "name": "블루스 스케일", "intervals": [0, 3, 5, 6, 7, 10], "desc": "마이너 펜타토닉에 블루노트를 더한 스케일."},
+    ],
+    "modes": [
+        {"id": "ionian", "name": "Ionian (1번 모드)", "intervals": [0, 2, 4, 5, 7, 9, 11], "desc": "메이저 스케일과 같은 모드."},
+        {"id": "dorian", "name": "Dorian (2번)", "intervals": [0, 2, 3, 5, 7, 9, 10], "desc": "밝은 6도를 가진 마이너 모드."},
+        {"id": "phrygian", "name": "Phrygian (3번)", "intervals": [0, 1, 3, 5, 7, 8, 10], "desc": "플라멩코 느낌의 어두운 모드."},
+        {"id": "lydian", "name": "Lydian (4번)", "intervals": [0, 2, 4, 6, 7, 9, 11], "desc": "♯4가 들어간 메이저 모드."},
+        {"id": "mixolydian", "name": "Mixolydian (5번)", "intervals": [0, 2, 4, 5, 7, 9, 10], "desc": "♭7을 가진 메이저 모드."},
+        {"id": "aeolian", "name": "Aeolian (6번)", "intervals": [0, 2, 3, 5, 7, 8, 10], "desc": "내추럴 마이너와 같은 모드."},
+        {"id": "locrian", "name": "Locrian (7번)", "intervals": [0, 1, 3, 5, 6, 8, 10], "desc": "♭2, ♭5가 들어간 불안정한 모드."},
+    ],
+    "exotic": [
+        {"id": "wholetone", "name": "홀톤 스케일", "intervals": [0, 2, 4, 6, 8, 10], "desc": "모든 음 간격이 전음인 6음 스케일."},
+        {"id": "dim_wh", "name": "디미니시드 (홀하프)", "intervals": [0, 2, 3, 5, 6, 8, 9, 11], "desc": "전음-반음이 반복되는 8음 스케일."},
+        {"id": "dim_hw", "name": "디미니시드 (하프홀)", "intervals": [0, 1, 3, 4, 6, 7, 9, 10], "desc": "반음-전음이 반복되는 8음 스케일."},
+        {"id": "hungarian", "name": "헝가리안 마이너", "intervals": [0, 2, 3, 6, 7, 8, 11], "desc": "하모닉 마이너에 ♯4를 더한 색채."},
+        {"id": "phrygian_dom", "name": "Phrygian Dominant", "intervals": [0, 1, 4, 5, 7, 8, 10], "desc": "하모닉 마이너의 5번 모드."},
+        {"id": "chromatic", "name": "크로매틱", "intervals": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], "desc": "12음 전체."},
+    ],
+}
+SCALE_INSTRUMENTS = {
+    "guitar": {
+        "label": "기타",
+        "image": "guitar_fretboard_22.png",
+        "image_size": (4096, 1050),
+        "open_x": 135,
+        "board_left": 256,
+        "board_right": 4008,
+        "string_y": [95, 256, 418, 580, 741, 902],
+        "tuning": [64, 59, 55, 50, 45, 40],
+        "max_fret": 22,
+    },
+    "bass": {
+        "label": "베이스",
+        "image": "bass_fretboard_20.png",
+        "image_size": (4096, 790),
+        "open_x": 135,
+        "board_left": 256,
+        "board_right": 4008,
+        "string_y": [96, 278, 459, 642],
+        "tuning": [43, 38, 33, 28],
+        "max_fret": 20,
+    },
+}
 
 
 class GuitarTAApp:
@@ -118,6 +199,14 @@ class GuitarTAApp:
         self.video_playing = False
         self.dialog_open = False
         self.text_entry_active = False
+        self.active_detail_view = "notes"
+        self.scale_instrument = "guitar"
+        self.scale_root = "C"
+        self.scale_category = "major"
+        self.scale_id = "major"
+        self.scale_accidental = "sharp"
+        self.scale_show_notes = True
+        self.scale_highlight_root = True
 
         self.categories: List[Category] = []
         self.notes: List[Note] = []
@@ -304,7 +393,7 @@ class GuitarTAApp:
                 [
                     ft.Row(
                         [
-                            self._sidebar_tool_button("스케일 연습", ft.Icons.FLAG_ROUNDED),
+                            self._sidebar_tool_button("스케일 연습", ft.Icons.FLAG_ROUNDED, self._open_scale_practice),
                             self._sidebar_tool_button("음정 트레이닝", ft.Icons.MY_LOCATION_ROUNDED),
                         ],
                         spacing=8,
@@ -321,7 +410,7 @@ class GuitarTAApp:
             ),
         )
 
-    def _sidebar_tool_button(self, label: str, icon: str) -> ft.Container:
+    def _sidebar_tool_button(self, label: str, icon: str, handler=None) -> ft.Container:
         return ft.Container(
             expand=True,
             height=SIDEBAR_TOOL_BUTTON_HEIGHT,
@@ -330,8 +419,8 @@ class GuitarTAApp:
             border_radius=6,
             padding=ft.padding.symmetric(horizontal=8, vertical=8),
             alignment=ft.alignment.center,
-            tooltip=f"{label} 준비 중",
-            on_click=self._noop_sidebar_tool,
+            tooltip=label if handler else f"{label} 준비 중",
+            on_click=handler or self._noop_sidebar_tool,
             content=ft.Column(
                 [
                     ft.Icon(icon, color=SIDEBAR_TEXT, size=18),
@@ -354,6 +443,385 @@ class GuitarTAApp:
 
     def _noop_sidebar_tool(self, event: ft.ControlEvent) -> None:
         return None
+
+    def _open_scale_practice(self, event: ft.ControlEvent) -> None:
+        self.active_detail_view = "scale"
+        if self.video_focus_mode:
+            self._set_video_focus_mode(False, update=False)
+        self.detail_area.content = self._scale_practice_view()
+        self.page.update()
+
+    def _scale_practice_view(self) -> ft.Control:
+        scale = self._current_scale()
+        if scale is None:
+            return ft.Container(
+                content=ft.Text("스케일을 불러올 수 없습니다.", color=MUTED, size=16),
+                alignment=ft.alignment.center,
+                expand=True,
+            )
+        notes = self._scale_note_names(scale)
+        degrees = [INTERVAL_LABELS.get(interval, str(interval)) for interval in scale["intervals"]]
+        return ft.Container(
+            expand=True,
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Column(
+                                [
+                                    ft.Text("스케일 연습", color=BEIGE, size=22, weight=ft.FontWeight.BOLD),
+                                    ft.Text(
+                                        f"{self._pc_label(self.scale_root)} {scale['name']}",
+                                        color=MUTED,
+                                        size=13,
+                                    ),
+                                ],
+                                spacing=2,
+                                expand=True,
+                            ),
+                            self._scale_toggle("음정 보기", self.scale_show_notes, self._toggle_scale_note_names),
+                            self._scale_toggle("루트 강조", self.scale_highlight_root, self._toggle_scale_root_highlight),
+                        ],
+                        spacing=12,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    self._scale_controls(),
+                    self._scale_info_panel(scale, notes, degrees),
+                    ft.Row(
+                        [self._scale_fretboard()],
+                        scroll=ft.ScrollMode.AUTO,
+                    ),
+                ],
+                expand=True,
+                spacing=14,
+                scroll=ft.ScrollMode.AUTO,
+            ),
+        )
+
+    def _scale_controls(self) -> ft.Control:
+        return ft.Container(
+            bgcolor=PANEL,
+            border=ft.border.all(1, LINE),
+            border_radius=8,
+            padding=ft.padding.all(12),
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            self._scale_instrument_button("guitar", ft.Icons.MUSIC_NOTE_ROUNDED),
+                            self._scale_instrument_button("bass", ft.Icons.GRAPHIC_EQ_ROUNDED),
+                            self._scale_dropdown(
+                                "루트",
+                                self.scale_root,
+                                [(pc, self._pc_label(pc)) for pc in CHROMATIC],
+                                self._set_scale_root,
+                                width=110,
+                            ),
+                            self._scale_dropdown(
+                                "표기",
+                                self.scale_accidental,
+                                [("sharp", "♯"), ("flat", "♭")],
+                                self._set_scale_accidental,
+                                width=96,
+                            ),
+                        ],
+                        spacing=10,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Row(
+                        [
+                            self._scale_dropdown(
+                                "카테고리",
+                                self.scale_category,
+                                [(key, label) for key, label in SCALE_CATEGORY_LABELS.items()],
+                                self._set_scale_category,
+                                width=180,
+                            ),
+                            self._scale_dropdown(
+                                "스케일",
+                                self.scale_id,
+                                [(item["id"], item["name"]) for item in SCALE_LIBRARY[self.scale_category]],
+                                self._set_scale_id,
+                                expand=True,
+                            ),
+                        ],
+                        spacing=10,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                ],
+                spacing=10,
+            ),
+        )
+
+    def _scale_info_panel(self, scale: Dict, notes: List[str], degrees: List[str]) -> ft.Control:
+        return ft.Container(
+            bgcolor=PANEL_2,
+            border=ft.border.all(1, LINE),
+            border_radius=8,
+            padding=ft.padding.all(12),
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            ft.Text(scale["name"], color=BEIGE, size=16, weight=ft.FontWeight.BOLD),
+                            ft.Text(scale.get("desc", ""), color=MUTED, size=12, expand=True),
+                        ],
+                        spacing=10,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Row(
+                        [
+                            ft.Text("구성음", color=MUTED, size=12, width=48),
+                            ft.Row([self._scale_note_chip(note, idx == 0) for idx, note in enumerate(notes)], spacing=6),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Row(
+                        [
+                            ft.Text("도수", color=MUTED, size=12, width=48),
+                            ft.Text("  ".join(degrees), color=TEXT, size=13),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _scale_fretboard(self) -> ft.Control:
+        inst = SCALE_INSTRUMENTS[self.scale_instrument]
+        image_w, image_h = inst["image_size"]
+        board_h = round(SCALE_BOARD_WIDTH * image_h / image_w)
+        controls = [
+            ft.Image(
+                src=inst["image"],
+                width=SCALE_BOARD_WIDTH,
+                height=board_h,
+                fit=ft.BoxFit.CONTAIN,
+            )
+        ]
+        controls.extend(self._scale_fret_markers(inst, board_h))
+        return ft.Container(
+            width=SCALE_BOARD_WIDTH,
+            height=board_h,
+            bgcolor="#000000",
+            border_radius=8,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            content=ft.Stack(
+                controls=controls,
+                width=SCALE_BOARD_WIDTH,
+                height=board_h,
+            ),
+        )
+
+    def _scale_fret_markers(self, inst: Dict, board_h: int) -> List[ft.Control]:
+        scale = self._current_scale()
+        if scale is None:
+            return []
+        root_idx = CHROMATIC.index(self.scale_root)
+        scale_pcs = {
+            CHROMATIC[(root_idx + interval) % 12]
+            for interval in scale["intervals"]
+        }
+        image_w, image_h = inst["image_size"]
+        sx = SCALE_BOARD_WIDTH / image_w
+        sy = board_h / image_h
+        markers: List[ft.Control] = []
+        for string_idx, open_midi in enumerate(inst["tuning"]):
+            for fret in range(0, inst["max_fret"] + 1):
+                midi = open_midi + fret
+                pc = CHROMATIC[midi % 12]
+                if pc not in scale_pcs:
+                    continue
+                is_root = pc == self.scale_root
+                x, y = self._scale_marker_position(inst, fret, string_idx)
+                size = 26 if is_root and self.scale_highlight_root else 22
+                markers.append(
+                    ft.Container(
+                        left=x * sx - size / 2,
+                        top=y * sy - size / 2,
+                        width=size,
+                        height=size,
+                        bgcolor=ACCENT if is_root and self.scale_highlight_root else "#FFF7EA",
+                        border=ft.border.all(2 if is_root and self.scale_highlight_root else 1, "#2A2118"),
+                        border_radius=50,
+                        alignment=ft.alignment.center,
+                        shadow=ft.BoxShadow(
+                            spread_radius=0,
+                            blur_radius=5,
+                            color="#66000000",
+                            offset=ft.Offset(0, 1),
+                        ),
+                        content=(
+                            ft.Text(
+                                self._pc_label(pc),
+                                color=BG,
+                                size=10 if len(self._pc_label(pc)) == 1 else 9,
+                                weight=ft.FontWeight.BOLD,
+                                text_align=ft.TextAlign.CENTER,
+                            )
+                            if self.scale_show_notes
+                            else None
+                        ),
+                    )
+                )
+        return markers
+
+    def _scale_marker_position(self, inst: Dict, fret: int, string_idx: int) -> Tuple[float, float]:
+        y = inst["string_y"][string_idx]
+        if fret == 0:
+            return float(inst["open_x"]), float(y)
+        board_left = float(inst["board_left"])
+        board_len = float(inst["board_right"] - inst["board_left"])
+        max_fret = int(inst["max_fret"])
+
+        def fret_line(fret_no: int) -> float:
+            if fret_no <= 0:
+                return board_left
+            normalized = (1 - 2 ** (-fret_no / 12)) / (1 - 2 ** (-max_fret / 12))
+            return board_left + board_len * normalized
+
+        prev_x = fret_line(fret - 1)
+        next_x = fret_line(fret)
+        return prev_x + (next_x - prev_x) * SCALE_PRESS_RATIO, float(y)
+
+    def _scale_instrument_button(self, instrument: str, icon: str) -> ft.Container:
+        selected = self.scale_instrument == instrument
+        return ft.Container(
+            width=112,
+            height=44,
+            bgcolor=ACCENT if selected else PANEL_2,
+            border=ft.border.all(1, ACCENT if selected else LINE),
+            border_radius=6,
+            alignment=ft.alignment.center,
+            on_click=lambda event, value=instrument: self._set_scale_instrument(value),
+            content=ft.Row(
+                [
+                    ft.Icon(icon, color=BG if selected else BEIGE, size=18),
+                    ft.Text(
+                        SCALE_INSTRUMENTS[instrument]["label"],
+                        color=BG if selected else BEIGE,
+                        size=13,
+                        weight=ft.FontWeight.BOLD,
+                    ),
+                ],
+                spacing=6,
+                tight=True,
+                alignment=ft.MainAxisAlignment.CENTER,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
+
+    def _scale_dropdown(self, label: str, value: str, options: List[Tuple[str, str]], on_change, width: Optional[int] = None, expand: bool = False) -> ft.Dropdown:
+        params = inspect.signature(ft.Dropdown).parameters
+        kwargs = {
+            "label": label,
+            "value": value,
+            "width": width,
+            "expand": expand,
+            "dense": True,
+            "bgcolor": PANEL_2,
+            "color": TEXT,
+            "border_color": LINE,
+            "focused_border_color": ACCENT,
+            "label_style": ft.TextStyle(color=MUTED),
+            "text_style": ft.TextStyle(color=TEXT),
+            "options": [
+                ft.dropdown.Option(
+                    key=key,
+                    text=text,
+                    content=ft.Text(text, color=TEXT, size=13),
+                )
+                for key, text in options
+            ],
+        }
+        kwargs["menu_height" if "menu_height" in params else "max_menu_height"] = self._dropdown_menu_height(len(options))
+        kwargs["on_select" if "on_select" in params else "on_change"] = on_change
+        return ft.Dropdown(**{key: value for key, value in kwargs.items() if key in params})
+
+    def _scale_toggle(self, label: str, value: bool, handler) -> ft.Switch:
+        return ft.Switch(
+            label=label,
+            value=value,
+            active_color=ACCENT,
+            label_text_style=ft.TextStyle(color=BEIGE, size=12),
+            on_change=handler,
+        )
+
+    def _scale_note_chip(self, note: str, root: bool) -> ft.Container:
+        return ft.Container(
+            width=36,
+            height=30,
+            border_radius=15,
+            bgcolor=ACCENT if root else "#FFF7EA",
+            border=ft.border.all(1, "#2A2118"),
+            alignment=ft.alignment.center,
+            content=ft.Text(note, color=BG, size=12, weight=ft.FontWeight.BOLD),
+        )
+
+    def _current_scale(self) -> Optional[Dict]:
+        scales = SCALE_LIBRARY.get(self.scale_category, [])
+        if not scales:
+            return None
+        for scale in scales:
+            if scale["id"] == self.scale_id:
+                return scale
+        self.scale_id = scales[0]["id"]
+        return scales[0]
+
+    def _scale_note_names(self, scale: Dict) -> List[str]:
+        root_idx = CHROMATIC.index(self.scale_root)
+        return [
+            self._pc_label(CHROMATIC[(root_idx + interval) % 12])
+            for interval in scale["intervals"]
+        ]
+
+    def _pc_label(self, pc: str) -> str:
+        return SHARP_TO_FLAT.get(pc, pc) if self.scale_accidental == "flat" else pc
+
+    def _refresh_scale_practice(self) -> None:
+        if self.active_detail_view == "scale":
+            self.detail_area.content = self._scale_practice_view()
+            self.page.update()
+
+    def _set_scale_instrument(self, instrument: str) -> None:
+        if instrument not in SCALE_INSTRUMENTS:
+            return
+        self.scale_instrument = instrument
+        self._refresh_scale_practice()
+
+    def _set_scale_root(self, event: ft.ControlEvent) -> None:
+        if event.control.value in CHROMATIC:
+            self.scale_root = event.control.value
+            self._refresh_scale_practice()
+
+    def _set_scale_accidental(self, event: ft.ControlEvent) -> None:
+        self.scale_accidental = "flat" if event.control.value == "flat" else "sharp"
+        self._refresh_scale_practice()
+
+    def _set_scale_category(self, event: ft.ControlEvent) -> None:
+        category = event.control.value
+        if category not in SCALE_LIBRARY:
+            return
+        self.scale_category = category
+        self.scale_id = SCALE_LIBRARY[category][0]["id"]
+        self._refresh_scale_practice()
+
+    def _set_scale_id(self, event: ft.ControlEvent) -> None:
+        scale_id = event.control.value
+        if any(scale["id"] == scale_id for scale in SCALE_LIBRARY.get(self.scale_category, [])):
+            self.scale_id = scale_id
+            self._refresh_scale_practice()
+
+    def _toggle_scale_note_names(self, event: ft.ControlEvent) -> None:
+        self.scale_show_notes = bool(event.control.value)
+        self._refresh_scale_practice()
+
+    def _toggle_scale_root_highlight(self, event: ft.ControlEvent) -> None:
+        self.scale_highlight_root = bool(event.control.value)
+        self._refresh_scale_practice()
 
     def _sidebar_rail(self) -> ft.Container:
         return ft.Container(
@@ -677,6 +1145,7 @@ class GuitarTAApp:
         )
 
     def _open_new_note(self, event: ft.ControlEvent) -> None:
+        self.active_detail_view = "notes"
         self.note_dialog_mode = "create"
         self.note_dialog.title.value = "새 노트 생성"
         self.new_title_input.value = ""
@@ -837,6 +1306,9 @@ class GuitarTAApp:
         self._auto_save_note_dialog_metadata()
 
     def _render_detail(self) -> None:
+        if self.active_detail_view == "scale":
+            self.detail_area.content = self._scale_practice_view()
+            return
         if not self.selected_note and self.video_focus_mode:
             self._set_video_focus_mode(False, update=False)
         if self.selected_note:
@@ -1137,6 +1609,7 @@ class GuitarTAApp:
         self.page.update()
 
     def _select_note(self, note: Note) -> None:
+        self.active_detail_view = "notes"
         self.loop_active = False
         self._cancel_loop_timer()
         self.selected_note = self.repo.note(note.id)
