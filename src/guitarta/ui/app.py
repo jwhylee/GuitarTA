@@ -90,11 +90,11 @@ AUDIO_KIND_LABELS = {
     "drums_only": "드럼 단독",
 }
 SIDEBAR_TOOL_BUTTON_HEIGHT = 58
-SCALE_BOARD_WIDTH = 880
-SCALE_BOARD_IMAGE_WIDTH = 850
-SCALE_BOARD_CONTENT_X = 20
+SCALE_BOARD_WIDTH = 960
+SCALE_BOARD_IMAGE_WIDTH = 930
+SCALE_BOARD_CONTENT_X = 15
 SCALE_PRESS_RATIO = 0.68
-SCALE_FRET_NUMBER_HEIGHT = 28
+SCALE_FRET_NUMBER_HEIGHT = 54
 SCALE_NUMBER_FRETS = [3, 5, 7, 9, 12, 15, 17, 19, 21]
 CHROMATIC = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 SHARP_TO_FLAT = {"C#": "D♭", "D#": "E♭", "F#": "G♭", "G#": "A♭", "A#": "B♭"}
@@ -680,7 +680,7 @@ class GuitarTAApp:
             numbers.append(
                 ft.Container(
                     left=SCALE_BOARD_CONTENT_X + x * image_scale - 12,
-                    top=image_display_h + 4,
+                    top=image_display_h + 18,
                     width=24,
                     height=20,
                     alignment=ft.alignment.center,
