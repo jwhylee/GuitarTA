@@ -89,6 +89,7 @@ AUDIO_KIND_LABELS = {
     "guitar_removed": "기타 제거",
     "drums_only": "드럼 단독",
 }
+SIDEBAR_TOOL_BUTTON_HEIGHT = 58
 
 
 class GuitarTAApp:
@@ -251,7 +252,7 @@ class GuitarTAApp:
                     ft.Row(
                         [
                             ft.Text("GuitarTA", size=28, color=SIDEBAR_TEXT, weight=ft.FontWeight.BOLD),
-                            ft.Text("v2.0", color=SIDEBAR_MUTED, size=12, expand=True),
+                            ft.Text("v3.0", color=SIDEBAR_MUTED, size=12, expand=True),
                             ft.IconButton(
                                 icon=ft.Icons.CHEVRON_LEFT_ROUNDED,
                                 icon_color=SIDEBAR_TEXT,
@@ -289,11 +290,70 @@ class GuitarTAApp:
                     self.category_dropdown,
                     ft.Divider(color="#BCA77C"),
                     self.note_list,
+                    ft.Divider(color="#BCA77C"),
+                    self._sidebar_tools_panel(),
                 ],
                 expand=True,
                 spacing=10,
             ),
         )
+
+    def _sidebar_tools_panel(self) -> ft.Container:
+        return ft.Container(
+            content=ft.Column(
+                [
+                    ft.Row(
+                        [
+                            self._sidebar_tool_button("스케일 연습", ft.Icons.FLAG_ROUNDED),
+                            self._sidebar_tool_button("음정 트레이닝", ft.Icons.MY_LOCATION_ROUNDED),
+                        ],
+                        spacing=8,
+                    ),
+                    ft.Row(
+                        [
+                            self._sidebar_tool_button("튜너", ft.Icons.TUNE_ROUNDED),
+                            self._sidebar_tool_button("메트로놈", ft.Icons.REPEAT_ROUNDED),
+                        ],
+                        spacing=8,
+                    ),
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _sidebar_tool_button(self, label: str, icon: str) -> ft.Container:
+        return ft.Container(
+            expand=True,
+            height=SIDEBAR_TOOL_BUTTON_HEIGHT,
+            bgcolor="#FFF2D7",
+            border=ft.border.all(1, "#BCA77C"),
+            border_radius=6,
+            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+            alignment=ft.alignment.center,
+            tooltip=f"{label} 준비 중",
+            on_click=self._noop_sidebar_tool,
+            content=ft.Column(
+                [
+                    ft.Icon(icon, color=SIDEBAR_TEXT, size=18),
+                    ft.Text(
+                        label,
+                        color=SIDEBAR_TEXT,
+                        size=13,
+                        weight=ft.FontWeight.BOLD,
+                        text_align=ft.TextAlign.CENTER,
+                        max_lines=1,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                    ),
+                ],
+                tight=True,
+                spacing=4,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                alignment=ft.MainAxisAlignment.CENTER,
+            ),
+        )
+
+    def _noop_sidebar_tool(self, event: ft.ControlEvent) -> None:
+        return None
 
     def _sidebar_rail(self) -> ft.Container:
         return ft.Container(
