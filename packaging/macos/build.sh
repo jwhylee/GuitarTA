@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STAGE_DIR="$ROOT_DIR/build/package_source_macos"
 OUTPUT_DIR="$ROOT_DIR/build/macos"
+APP_VERSION="$("$ROOT_DIR/.venv/bin/python" -c 'import sys, tomllib; from pathlib import Path; print(tomllib.loads(Path(sys.argv[1]).read_text())["project"]["version"])' "$ROOT_DIR/pyproject.toml")"
 
 rm -rf "$STAGE_DIR"
 mkdir -p "$STAGE_DIR"
@@ -64,7 +65,7 @@ PY
 
 (
   cd "$STAGE_DIR/build/flutter"
-  "$FLUTTER_BIN" build macos --release
+  "$FLUTTER_BIN" build macos --release --build-name "$APP_VERSION"
 )
 
 rm -rf "$OUTPUT_DIR/GuitarTA.app"
