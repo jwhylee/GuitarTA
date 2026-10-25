@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import flet as ft
 
 from guitarta.ui.app import GuitarTAApp
@@ -20,7 +22,8 @@ def app(page: ft.Page) -> None:
 
 
 def main() -> None:
-    ft.app(target=app)
+    assets_dir = Path(__file__).resolve().parents[2] / "assets"
+    ft.app(target=app, assets_dir=str(assets_dir) if assets_dir.is_dir() else "assets")
 
 
 if __name__ == "__main__":
