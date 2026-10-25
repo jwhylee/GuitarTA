@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STAGE_DIR="$ROOT_DIR/build/package_source_macos"
-OUTPUT_DIR="$ROOT_DIR/build/macos"
+OUTPUT_DIR="${GUITARTA_OUTPUT_DIR:-$ROOT_DIR/build/macos}"
 APP_VERSION="$("$ROOT_DIR/.venv/bin/python" -c 'import sys, tomllib; from pathlib import Path; print(tomllib.loads(Path(sys.argv[1]).read_text())["project"]["version"])' "$ROOT_DIR/pyproject.toml")"
 
 rm -rf "$STAGE_DIR"

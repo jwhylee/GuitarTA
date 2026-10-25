@@ -1,6 +1,8 @@
+import logging
 import shutil
 import subprocess
 import time
+import wave
 from contextlib import redirect_stderr, redirect_stdout
 from math import pow
 from pathlib import Path
@@ -14,6 +16,7 @@ class AudioProcessingError(RuntimeError):
 AUDIO_KINDS = {"original", "bass_removed", "guitar_removed", "drums_only"}
 DEMUX_MODEL = "htdemucs_6s"
 REQUIRED_STEMS = {"drums", "bass", "other", "vocals", "guitar", "piano"}
+logger = logging.getLogger(__name__)
 
 
 class AudioProcessor:
@@ -59,6 +62,7 @@ class AudioProcessor:
             self._report(progress, "드럼 단독 음원 생성 중...")
             self._copy_stem(stems["drums"], paths["drums_only"])
 
+        self.cleanup_note_stems(note_id)
         self._report(progress, "오디오 준비 완료")
         return {
             "original_audio_path": str(paths["original"]),
@@ -66,6 +70,54 @@ class AudioProcessor:
             "guitar_removed_audio_path": str(paths["guitar_removed"]),
             "drums_only_audio_path": str(paths["drums_only"]),
         }
+
+    def cleanup_note_stems(self, note_id: int) -> int:
+        paths = self._note_paths(note_id)
+        stems_dir = paths["stems_dir"]
+        if stems_dir.is_symlink() or not stems_dir.is_dir():
+            return 0
+        try:
+            if not self._outputs_current(paths):
+                return 0
+            durations = [
+                self._complete_wav_duration(paths[key])
+                for key in ("original", "bass_removed", "guitar_removed", "drums_only")
+            ]
+            if any(duration is None for duration in durations):
+                return 0
+            if max(durations) - min(durations) > 0.1:
+                return 0
+            size = sum(
+                path.stat().st_size
+                for path in stems_dir.rglob("*")
+                if path.is_file() and not path.is_symlink()
+            )
+            shutil.rmtree(stems_dir)
+            return size
+        except OSError:
+            logger.warning("Could not clean intermediate stems for note %s", note_id, exc_info=True)
+            return 0
+
+    @staticmethod
+    def _complete_wav_duration(path: Path) -> Optional[float]:
+        try:
+            if path.is_symlink():
+                return None
+            with wave.open(str(path), "rb") as audio:
+                frames = audio.getnframes()
+                rate = audio.getframerate()
+                frame_size = audio.getnchannels() * audio.getsampwidth()
+                if frames <= 0 or rate <= 0 or audio.getcomptype() != "NONE":
+                    return None
+                if path.stat().st_size < frames * frame_size:
+                    return None
+                # Check the declared audio data actually reaches its final frame.
+                audio.setpos(frames - 1)
+                if len(audio.readframes(1)) != frame_size:
+                    return None
+                return frames / rate
+        except (OSError, EOFError, ValueError, wave.Error):
+            return None
 
     def playback_media_path(
         self,
